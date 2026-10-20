@@ -1,0 +1,6 @@
+name = "tokyo-manga-lab-api"
+main = "src/index.js"
+compatibility_date = "2026-10-20"
+
+[observability]
+enabled = true
