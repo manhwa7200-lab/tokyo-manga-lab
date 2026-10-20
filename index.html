@@ -24,15 +24,15 @@
       <div>
         <div class="eyebrow">Reader prototype · Phase 01</div>
         <h2>A home for every <span>chapter.</span></h2>
-        <p>Explore the interface, search a sample catalogue, save titles to your local shelf, and test a no-backend reading workflow. Your library stays in this browser.</p>
-        <div class="searchrow"><input id="searchInput" class="search" type="search" placeholder="Search titles, genres, tags…" autocomplete="off" aria-label="Search sample catalogue"><button class="primary" id="searchBtn" type="button">Search library</button></div>
+        <p>Search MangaDex, save titles to your local shelf, and track reading status offline.</p>
+        <div class="searchrow"><input id="searchInput" class="search" type="search" placeholder="Search titles, genres, tags…" autocomplete="off" aria-label="Search MangaDex catalogue"><button class="primary" id="searchBtn" type="button">Search library</button></div>
       </div>
       <div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="hero-glyph">漫画</div></div>
     </section>
     <section class="stats" aria-label="Library stats">
       <div class="stat"><strong id="savedCount">0</strong><span>Saved to library</span></div>
       <div class="stat"><strong id="readingCount">0</strong><span>In progress</span></div>
-      <div class="stat"><strong id="catalogueCount">8</strong><span>Demo titles</span></div>
+      <div class="stat"><strong id="catalogueCount">8</strong><span>Catalogue entries</span></div>
     </section>
     <section>
       <div class="sectionhead"><div><h3 id="listTitle">Discover manga</h3><p id="listSubtitle">Fictional, non-explicit sample entries for interface testing.</p></div><button class="ghost" id="libraryBtn" type="button">My library</button></div>
@@ -42,7 +42,7 @@
       <div id="catalogue" class="grid" aria-live="polite"></div>
     </section>
     <aside class="notice"><strong>Prototype / hosting note:</strong> This demo uses fictional sample metadata and local browser storage only. It does not fetch or host manga pages, connect to adult-content sources, or collect account information. GitHub Pages is suitable for this neutral UI test; it is not the intended host for an explicit-content service.</aside>
-    <footer><span>Tokyo Manga Lab · Demo build 0.1</span><span>Settings and reading state are stored locally in this browser.</span></footer>
+    <footer><span>Tokyo Manga Lab · Live catalogue prototype 0.2</span><span>Settings and reading state are stored locally in this browser.</span></footer>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script>
@@ -75,5 +75,6 @@
     document.getElementById('exportBtn').addEventListener('click',()=>{const data={app:'Tokyo Manga Lab',version:1,exportedAt:new Date().toISOString(),saved:state.saved,reading:state.reading};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='tokyo-manga-lab-library.json';a.click();URL.revokeObjectURL(url);toast('Library backup exported');});
     render();
   </script>
+  <script src="./mangadex-live.js"></script>
 </body>
 </html>
