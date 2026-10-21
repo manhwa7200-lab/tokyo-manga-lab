@@ -1,0 +1,14 @@
+{
+  "appId": "com.tokyobrotherhood.mangalab",
+  "appName": "Tokyo Manga Lab",
+  "webDir": "www",
+  "backgroundColor": "#09080f",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}
