@@ -1,0 +1,79 @@
+ name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java 21 (required by Capacitor 7)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax checks and tests
+        run: |
+          npm run check
+          npm test
+
+      - name: Build web bundle (www/)
+        run: npm run build:www
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Apply version and icon
+        run: |
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          bash scripts/android-customize.sh "$VERSION_NAME" "${{ github.run_number }}"
+
+      - name: Sync web assets into Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          VERSION_NAME="$(node -p "require('./package.json').version")"
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/Tokyo-Manga-Lab-${VERSION_NAME}-debug.apk"
+          ls -lh dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tokyo-Manga-Lab-APK
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.apk \
+            --title "Tokyo Manga Lab ${GITHUB_REF_NAME}" \
+            --notes "Debug-signed APK. Enable 'Install unknown apps' on Android to install." \
+            --prerelease
