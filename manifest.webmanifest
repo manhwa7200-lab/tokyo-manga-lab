@@ -1,0 +1,10 @@
+{
+  "name": "Tokyo Manga Lab",
+  "short_name": "Manga Lab",
+  "description": "Your manga library, your rules.",
+  "start_url": "./index.html#home",
+  "display": "standalone",
+  "background_color": "#09080f",
+  "theme_color": "#09080f",
+  "icons": [{"src":"./assets/favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

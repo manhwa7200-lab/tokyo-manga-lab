@@ -1,0 +1,1 @@
+:root[data-theme="midnight"]{--bg:#070b13;--panel:#0f1521;--panel-raised:#151e2c;--panel-soft:#1a2638;--line:#27364a;--pink:#7dd3fc;--pink-strong:#67e8f9;--purple:#818cf8;--cyan:#a5f3fc;--good:#86efac}.theme-preview{display:inline-block;width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple))}
