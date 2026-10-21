@@ -1,0 +1,54 @@
+name: Unzip and apply ZIP
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_path:
+        description: "Path of the ZIP inside the repo"
+        required: true
+        default: "Tokyo-Manga-Lab-APK-Kit.zip"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unzip onto a new branch
+        env:
+          ZIP_PATH: ${{ inputs.zip_path }}
+        run: bash scripts/apply-zip.sh "$ZIP_PATH"
+
+      - name: Commit and push branch
+        id: push
+        run: |
+          BRANCH="import/zip-${GITHUB_RUN_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes: the ZIP matches the repository."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "Import files from ZIP (${{ inputs.zip_path }})"
+          git push origin "$BRANCH"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request
+        if: steps.push.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --base "${{ github.event.repository.default_branch }}" \
+            --head "${{ steps.push.outputs.branch }}" \
+            --title "Import files from ZIP" \
+            --body "Files unzipped by the 'Unzip and apply ZIP' workflow. Review the diff before merging." \
+          || echo "::warning::Could not open a PR automatically. The branch ${{ steps.push.outputs.branch }} was pushed; open the PR from the Branches page."
