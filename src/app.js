@@ -1,5 +1,5 @@
 import { AppController } from './core/app-controller.js';
-import { bindNavigation, getCurrentRoute } from './core/router.js';
+import { bindNavigation, getCurrentRoute, getRouteParam } from './core/router.js';
 import { openDatabase } from './data/database.js';
 import {
   addItemToCollection, addToLibrary, cacheCatalogueItems, createCollection,
@@ -11,6 +11,11 @@ import { loadSettings, saveSetting } from './features/settings/settings-service.
 import { migrateLegacyLocalStorage } from './features/settings/legacy-migration.js';
 import { getDashboardStatistics } from './features/statistics/statistics-service.js';
 import { escapeHtml, formatDate, slug, truncate } from './shared/utils.js';
+import { hydrateIcons, icon } from './shared/icons.js';
+import { APP_VERSION } from './shared/app-info.js';
+import { CHAPTER_LANGUAGES, SETTINGS_CATEGORIES, findCategory } from './features/settings/settings-schema.js';
+import { PROFILE_GROUPS, plannedProfileRows } from './features/profile/profile-sections.js';
+import { featuresFor } from './features/feature-registry.js';
 
 const root = document.getElementById('appView');
 const state = {
@@ -43,7 +48,9 @@ function toast(message) {
 function setConnectionStatus(status, label) {
   const el = document.getElementById('connectionStatus');
   el.dataset.state = status;
-  el.innerHTML = `<span class="status-dot"></span>${escapeHtml(label)}`;
+  el.title = label;
+  el.setAttribute('aria-label', label);
+  el.innerHTML = `<span class="status-dot"></span><span class="status-text">${escapeHtml(label)}</span>`;
 }
 
 // Replace broken remote covers with a local visual fallback without blocking the card.
@@ -83,29 +90,37 @@ function getLibraryEntry(itemId) {
   return state.libraryById.get(itemId) || null;
 }
 
-function renderMangaCard(item, { compact = false } = {}) {
+function renderMangaCard(item) {
   const entry = getLibraryEntry(item.id);
-  const tags = (item.tags || []).slice(0, 3).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('');
-  const savedLabel = entry ? '✓ In library' : '+ Add to library';
-  const mainAction = entry
-    ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Reading ✓' : 'Mark reading'}</button>`
-    : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">${savedLabel}</button>`;
-  return `<article class="manga-card" data-content-id="${escapeHtml(item.id)}">
-    <div class="cover" style="--cover-a:#55316f;--cover-b:#24485e">
-      <span class="source-badge">${item.sourceId === 'mangadex' ? 'MANGADEX' : 'LOCAL'}</span>
-      ${coverMarkup(item)}
+  const saved = Boolean(entry);
+  const title = escapeHtml(item.title);
+  const id = escapeHtml(item.id);
+  const status = entry && entry.personalStatus !== 'planned' ? `<span class="card-status">${escapeHtml(entry.personalStatus)}</span>` : '';
+  return `<article class="manga-card" data-content-id="${id}">
+    <div class="poster-wrap">
+      <button class="poster" type="button" data-action="details" data-id="${id}" aria-label="Open details for ${title}">${coverMarkup(item)}</button>
+      <button class="card-save ${saved ? 'saved' : ''}" type="button" data-action="save" data-id="${id}" aria-pressed="${saved}" aria-label="${saved ? 'Remove from library' : 'Add to library'}: ${title}">${icon(saved ? 'bookmarkFill' : 'bookmark')}</button>
+      ${status}
     </div>
-    <div class="card-body">
-      <h3 class="card-title">${escapeHtml(item.title)}</h3>
-      <div class="meta"><span title="${escapeHtml(titleAuthor(item))}">${escapeHtml(titleAuthor(item))}</span><span>${escapeHtml(item.releaseYear || 'Year n/a')}</span></div>
-      <p class="description">${escapeHtml(truncate(item.description || 'Open the source page for more details.', 130))}</p>
-      <div class="tag-row">${tags || '<span class="tag">Manga</span>'}</div>
-      <div class="card-actions">
-        ${mainAction}
-        <button class="button" data-action="details" data-id="${escapeHtml(item.id)}">Details</button>
-      </div>
-    </div>
+    <div class="card-body"><h3 class="card-title">${title}</h3><p class="card-meta">${escapeHtml(titleAuthor(item))}</p></div>
   </article>`;
+}
+
+// One row in a grouped list. Used by Profile, Settings and the planned-feature lists.
+function listRow({ icon: iconName = '', title, description = '', href = '', action = '', attrs = '', planned = false, badge = '', trail = '', external = false }) {
+  const tile = iconName ? `<span class="row-icon">${icon(iconName)}</span>` : '';
+  const label = badge || (planned ? 'Planned' : '');
+  const inner = `${tile}<span class="row-copy"><strong>${escapeHtml(title)}${label ? `<span class="badge-planned">${escapeHtml(label)}</span>` : ''}</strong>${description ? `<small>${escapeHtml(description)}</small>` : ''}</span>${trail ? `<span class="row-trail">${trail}</span>` : ''}`;
+  const cls = `row${planned ? ' is-planned' : ''}`;
+  if (href) return `<a class="${cls}" href="${escapeHtml(href)}"${external ? ' target="_blank" rel="noopener noreferrer"' : ''}>${inner}</a>`;
+  if (action) return `<button class="${cls}" type="button" data-action="${escapeHtml(action)}" ${attrs}>${inner}</button>`;
+  return `<div class="${cls}"${planned ? ' aria-disabled="true"' : ''}>${inner}</div>`;
+}
+
+function renderRoadmap(screen) {
+  const list = featuresFor(screen);
+  if (!list.length) return '';
+  return `<details class="roadmap"><summary>${icon('sparkle')}<span>Planned for this screen</span>${icon('chevronRight')}</summary><div class="group">${list.map(feature => listRow({ icon: feature.icon, title: feature.title, description: feature.description, planned: true })).join('')}</div></details>`;
 }
 
 function renderEmpty(title, message, action = '') {
@@ -113,17 +128,8 @@ function renderEmpty(title, message, action = '') {
 }
 
 function renderStats(stats) {
-  const cards = [
-    ['▤', stats.totalTitles, 'In your library'],
-    ['◌', stats.reading, 'Currently reading'],
-    ['✓', stats.completed, 'Completed titles'],
-    ['♡', stats.favorites, 'Favourites']
-  ];
-  return `<div class="stat-grid">${cards.map(([icon, value, label]) => `<div class="stat-card"><span class="stat-icon" aria-hidden="true">${icon}</span><strong>${Number(value) || 0}</strong><span>${label}</span></div>`).join('')}</div>`;
-}
-
-function renderItemsGrid(items, emptyTitle = 'Nothing here yet', emptyMessage = 'Search the catalogue and add a title to your library.', action = '') {
-  return items.length ? `<div class="content-grid">${items.map(item => renderMangaCard(item)).join('')}</div>` : renderEmpty(emptyTitle, emptyMessage, action);
+  const cells = [[stats.totalTitles, 'In library'], [stats.reading, 'Reading'], [stats.completed, 'Completed'], [stats.favorites, 'Favourites']];
+  return `<div class="stat-strip" role="list">${cells.map(([value, label]) => `<div role="listitem"><strong>${Number(value) || 0}</strong><span>${label}</span></div>`).join('')}</div>`;
 }
 
 function searchControls() {
@@ -131,7 +137,7 @@ function searchControls() {
     ['all', 'All'], ['action', 'Action'], ['adventure', 'Adventure'], ['fantasy', 'Fantasy'],
     ['romance', 'Romance'], ['mystery', 'Mystery'], ['sci-fi', 'Sci-fi'], ['slice-of-life', 'Slice of life']
   ];
-  return `<div class="filter-row" aria-label="Filter current results by tag">${genres.map(([id, label]) => `<button class="filter-chip ${state.genre === id ? 'active' : ''}" type="button" data-action="genre-filter" data-genre="${id}" aria-pressed="${state.genre === id}">${label}</button>`).join('')}</div>`;
+  return `<div class="chip-row" role="group" aria-label="Filter results by genre">${genres.map(([id, label]) => `<button class="filter-chip ${state.genre === id ? 'active' : ''}" type="button" data-action="genre-filter" data-genre="${id}" aria-pressed="${state.genre === id}">${label}</button>`).join('')}</div>`;
 }
 
 function filteredResults() {
@@ -159,33 +165,42 @@ function renderStatusBanner() {
 }
 
 async function renderHome() {
-  const library = await getLibraryItems();
+  await refreshLibraryIndex();
   const stats = await getDashboardStatistics();
-  const continuing = library.filter(row => row.personalStatus === 'reading').slice(0, 4).map(row => row.item);
-  const fresh = state.results.slice(0, 8);
-  return `<section class="hero-panel">
-    <div><div class="eyebrow">Your reading space · Version 1</div><h1>A home for every <span>chapter.</span></h1><p>Discover manga, build your personal library, and keep track of what you want to read next. Your library data stays in this browser.</p>
-      <form class="search-bar" data-form="search"><label class="sr-only" for="homeSearch">Search manga titles</label><input class="field" id="homeSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Search MangaDex titles…" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search manga</button></form>
-      <div class="filter-row"><span class="pill-label">MangaDex catalogue</span><span class="pill-label">Local-first library</span><span class="pill-label">Sakura Night UI</span></div>
-    </div><div class="hero-art" aria-hidden="true"><div class="hero-orbit"></div><div class="hero-kanji">漫画</div></div>
-  </section>
-  ${renderStats(stats)}
-  <section><div class="section-heading"><div><h2>Continue reading</h2><p>Your titles marked as currently reading.</p></div><a class="button" href="#library">Open library</a></div>${renderItemsGrid(continuing, 'Your reading shelf is waiting', 'Add a manga and mark it as reading to see it here.', '<a class="button-primary" href="#discover">Discover manga</a>')}</section>
-  <section><div class="section-heading"><div><h2>Fresh from MangaDex</h2><p>Recent catalogue entries. Select Details to inspect a title.</p></div><a class="button" href="#discover">Explore all</a></div>${state.searchLoading && !fresh.length ? '<div class="empty-state"><span class="spinner"></span><strong style="margin-top:12px">Loading catalogue…</strong></div>' : renderItemsGrid(fresh, 'Catalogue not loaded', 'Open Discover to retry the manga catalogue.')}</section>
-  ${renderStatusBanner()}
-  <p class="footer-note">Tokyo Manga Lab · Tokyo Brotherhood · Created by Hariharasuthan Karunakaran · Preview build 0.3</p>`;
+  const continuing = state.library.filter(row => row.personalStatus === 'reading').slice(0, 12).map(row => row.item);
+  const fresh = state.results.slice(0, 12);
+  const continueBlock = continuing.length
+    ? `<div class="rail">${continuing.map(item => renderMangaCard(item)).join('')}</div>`
+    : `<div class="shelf-empty">${icon('bookmark')}<p><strong>Nothing in progress</strong>Add a title and mark it as reading to find it here.</p><a class="button-subtle" href="#discover">Discover</a></div>`;
+  const freshBlock = state.searchLoading && !fresh.length
+    ? '<div class="empty-state"><span class="spinner"></span><strong>Loading catalogue</strong></div>'
+    : fresh.length ? `<div class="rail">${fresh.map(item => renderMangaCard(item)).join('')}</div>` : renderEmpty('Catalogue not loaded', 'Open Discover to try again.');
+  return `<section>
+    <div class="page-head"><div><h1>Home</h1><p>Pick up where you left off.</p></div></div>
+    <form class="search-bar" data-form="search"><label class="sr-only" for="homeSearch">Search manga titles</label><input class="field" id="homeSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Search manga" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search</button></form>
+    <div class="section-head"><h2>Continue reading</h2><a class="more" href="#library">Library${icon('chevronRight', 'icon-sm')}</a></div>${continueBlock}
+    <div class="section-head"><h2>From MangaDex</h2><a class="more" href="#discover">See all${icon('chevronRight', 'icon-sm')}</a></div>${freshBlock}
+    ${renderStats(stats)}
+    ${renderStatusBanner()}
+    ${renderRoadmap('home')}
+    <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)} · Tokyo Brotherhood</p>
+  </section>`;
 }
 
 async function renderDiscover() {
-  return `<section><div class="section-heading"><div><div class="eyebrow">Catalogue</div><h1>Discover manga</h1><p>Search and filter metadata returned by the MangaDex connector.</p></div><span class="pill-label">Source: MangaDex</span></div>
-  <div class="search-panel"><form class="search-bar" data-form="search"><label class="sr-only" for="discoverSearch">Search manga titles</label><input class="field" id="discoverSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Title, series or keyword…" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search</button></form>${searchControls()}<p class="muted" style="font-size:.72rem;margin:4px 0 0">Tag filters apply to the currently loaded results page.</p></div>
-  <div class="section-topline"><div><h2>${state.query ? `Results for “${escapeHtml(state.query)}”` : 'Latest catalogue entries'}</h2><p>${state.offlineResults ? 'Showing locally cached catalogue data.' : `${Number(state.pagination.total).toLocaleString()} total results when reported by the source.`}</p></div><button class="button" data-action="retry-search">Refresh results</button></div>
-  ${renderStatusBanner()}<div style="margin-top:14px">${resultsGrid()}</div>${paginationMarkup()}<p class="footer-note">Catalogue metadata and covers remain attributed to their respective sources. Chapter reading has not been connected in this build.</p></section>`;
+  await refreshLibraryIndex();
+  return `<section>
+    <div class="page-head"><div><h1>Discover</h1><p>Search the MangaDex catalogue.</p></div></div>
+    <div class="search-panel"><form class="search-bar" data-form="search"><label class="sr-only" for="discoverSearch">Search manga titles</label><input class="field" id="discoverSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Title, series or keyword" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search</button></form>${searchControls()}<p class="search-note">Genre chips filter the results already loaded on this page.</p></div>
+    <div class="section-head"><div><h2>${state.query ? `Results for “${escapeHtml(state.query)}”` : 'Latest from MangaDex'}</h2><p>${state.offlineResults ? 'Showing cached titles saved on this device.' : `${Number(state.pagination.total).toLocaleString()} titles found`}</p></div><button class="button button-small" data-action="retry-search">Refresh</button></div>
+    ${renderStatusBanner()}${resultsGrid()}${paginationMarkup()}
+    ${renderRoadmap('discover')}
+    <p class="footer-note">Metadata and covers belong to their sources. Chapters open on the original site.</p>
+  </section>`;
 }
 
 async function renderLibrary() {
-  state.library = await getLibraryItems();
-  state.libraryById = new Map(state.library.map(row => [row.contentItemId, row]));
+  await refreshLibraryIndex();
   state.collections = await getCollections();
   let entries = state.library;
   if (state.libraryStatusFilter !== 'all') entries = entries.filter(row => row.personalStatus === state.libraryStatusFilter);
@@ -194,22 +209,41 @@ async function renderLibrary() {
     const ids = new Set(collectionRows.map(row => row.contentItemId));
     entries = entries.filter(row => ids.has(row.contentItemId));
   }
-  const collectionChips = `<button class="collection-chip ${!state.selectedCollectionId ? 'active' : ''}" data-action="select-collection" data-id="">All titles</button>${state.collections.map(c => `<button class="collection-chip ${state.selectedCollectionId === c.id ? 'active' : ''}" data-action="select-collection" data-id="${escapeHtml(c.id)}">${escapeHtml(c.name)}</button>`).join('')}`;
-  const listMarkup = entries.length ? `<div>${entries.map(row => {
+  const sort = state.settings?.defaultLibrarySort || 'recently-updated';
+  if (sort === 'recently-added') entries = [...entries].sort((a, b) => String(b.addedAt).localeCompare(String(a.addedAt)));
+  else if (sort === 'title') entries = [...entries].sort((a, b) => String(a.item.title).localeCompare(String(b.item.title)));
+  const statuses = [['all', 'All statuses'], ['reading', 'Reading'], ['planned', 'Planned'], ['completed', 'Completed'], ['paused', 'Paused'], ['dropped', 'Dropped']];
+  const collectionChips = `<div class="chip-row" role="group" aria-label="Collections"><button class="collection-chip ${!state.selectedCollectionId ? 'active' : ''}" data-action="select-collection" data-id="">All titles</button>${state.collections.map(c => `<button class="collection-chip ${state.selectedCollectionId === c.id ? 'active' : ''}" data-action="select-collection" data-id="${escapeHtml(c.id)}">${escapeHtml(c.name)}</button>`).join('')}</div>`;
+  const listMarkup = entries.length ? `<div class="library-list">${entries.map(row => {
     const item = row.item;
-    return `<article class="library-card"><div>${coverMarkup(item, true)}</div><div class="library-info"><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(titleAuthor(item))} · Added ${formatDate(row.addedAt)}</p><span class="pill-label">${escapeHtml(row.personalStatus)}</span>${row.isFavorite ? '<span class="tag">♥ Favourite</span>' : ''}</div><div class="library-actions"><label class="sr-only" for="status-${escapeHtml(item.id)}">Status for ${escapeHtml(item.title)}</label><select class="select-field" id="status-${escapeHtml(item.id)}" data-library-status="${escapeHtml(item.id)}"><option value="planned" ${row.personalStatus === 'planned' ? 'selected' : ''}>Planned</option><option value="reading" ${row.personalStatus === 'reading' ? 'selected' : ''}>Reading</option><option value="completed" ${row.personalStatus === 'completed' ? 'selected' : ''}>Completed</option><option value="paused" ${row.personalStatus === 'paused' ? 'selected' : ''}>Paused</option><option value="dropped" ${row.personalStatus === 'dropped' ? 'selected' : ''}>Dropped</option></select><button class="button button-small" data-action="favorite" data-id="${escapeHtml(item.id)}">${row.isFavorite ? '♥ Saved' : '♡ Favourite'}</button><button class="button button-small" data-action="add-collection" data-id="${escapeHtml(item.id)}">Add to collection</button><button class="button button-small button-danger" data-action="remove" data-id="${escapeHtml(item.id)}">Remove</button></div></article>`;
-  }).join('')}</div>` : renderEmpty('Your library is empty', 'Search MangaDex and add titles to build your personal shelf.', '<a class="button-primary" href="#discover">Discover manga</a>');
-  return `<section><div class="section-heading"><div><div class="eyebrow">Your space</div><h1>My library</h1><p>Personal status, favourites and custom collections live on this device.</p></div><button class="button-primary" data-action="create-collection">＋ New collection</button></div>
-  <div class="surface surface-pad"><div class="content-toolbar"><label class="field-label" for="statusFilter" style="margin:0">Status</label><select class="select-field" id="statusFilter" data-action="status-filter"><option value="all" ${state.libraryStatusFilter === 'all' ? 'selected' : ''}>All statuses</option><option value="reading" ${state.libraryStatusFilter === 'reading' ? 'selected' : ''}>Reading</option><option value="planned" ${state.libraryStatusFilter === 'planned' ? 'selected' : ''}>Planned</option><option value="completed" ${state.libraryStatusFilter === 'completed' ? 'selected' : ''}>Completed</option><option value="paused" ${state.libraryStatusFilter === 'paused' ? 'selected' : ''}>Paused</option><option value="dropped" ${state.libraryStatusFilter === 'dropped' ? 'selected' : ''}>Dropped</option></select><span class="muted" style="font-size:.75rem">${entries.length} title${entries.length === 1 ? '' : 's'}</span></div><div class="collection-row">${collectionChips}</div></div>
-  <div class="section-topline"><div><h2>${state.selectedCollectionId ? escapeHtml(state.collections.find(c => c.id === state.selectedCollectionId)?.name || 'Collection') : 'All library titles'}</h2><p>Changes save in your local database as you make them.</p></div><button class="button" data-action="export-backup">Export backup</button></div>${listMarkup}<p class="footer-note">Removing a title from this library does not delete the cached catalogue metadata, bookmarks or imported files.</p></section>`;
+    const id = escapeHtml(item.id);
+    const options = ['planned', 'reading', 'completed', 'paused', 'dropped'].map(s => `<option value="${s}" ${row.personalStatus === s ? 'selected' : ''}>${s.charAt(0).toUpperCase()}${s.slice(1)}</option>`).join('');
+    return `<article class="library-card"><button class="poster-link" type="button" data-action="details" data-id="${id}" aria-label="Open details for ${escapeHtml(item.title)}">${coverMarkup(item, true)}</button><div class="library-info"><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(titleAuthor(item))} · Added ${escapeHtml(formatDate(row.addedAt))}</p>${row.isFavorite ? '<span class="pill-label accent">Favourite</span>' : ''}</div><div class="library-actions"><label class="sr-only" for="status-${id}">Status for ${escapeHtml(item.title)}</label><select class="select-field" id="status-${id}" data-library-status="${id}">${options}</select><button class="button button-small" data-action="favorite" data-id="${id}">${row.isFavorite ? 'Unfavourite' : 'Favourite'}</button><button class="button button-small" data-action="add-collection" data-id="${id}">Collection</button><button class="button button-small button-danger" data-action="remove" data-id="${id}">Remove</button></div></article>`;
+  }).join('')}</div>` : renderEmpty('Your library is empty', 'Search MangaDex and save titles to build your shelf.', '<a class="button-primary" href="#discover">Discover manga</a>');
+  const collectionName = state.selectedCollectionId ? escapeHtml(state.collections.find(c => c.id === state.selectedCollectionId)?.name || 'Collection') : 'All titles';
+  return `<section>
+    <div class="page-head"><div><h1>Library</h1><p>${collectionName} · saved on this device</p></div><button class="button-primary button-small" data-action="create-collection">${icon('plus', 'icon-sm')}Collection</button></div>
+    ${collectionChips}
+    <div class="toolbar"><label class="sr-only" for="statusFilter">Filter by status</label><select class="select-field" id="statusFilter" data-action="status-filter">${statuses.map(([value, label]) => `<option value="${value}" ${state.libraryStatusFilter === value ? 'selected' : ''}>${label}</option>`).join('')}</select><span class="count">${entries.length} title${entries.length === 1 ? '' : 's'}</span></div>
+    ${listMarkup}
+    ${renderRoadmap('library')}
+    <p class="footer-note">Removing a title keeps its cached metadata, bookmarks and imported files.</p>
+  </section>`;
 }
 
 async function renderDownloads() {
-  const jobs = (await import('./data/database.js')).getAllRecords('downloadJobs');
-  const rows = await jobs;
-  return `<section><div class="section-heading"><div><div class="eyebrow">Offline shelf</div><h1>Downloads</h1><p>Manage offline content as source and chapter permissions are added.</p></div><span class="pill-label">Foundation only</span></div>
-  <div class="surface surface-pad"><div class="feature-list"><div class="feature-row"><span class="feature-icon">⇩</span><div><strong>Offline chapter downloads — planned</strong><small>The current Worker provides catalogue metadata only, not chapter pages. We will add downloads after chapter endpoints and source permissions are verified.</small></div></div><div class="feature-row"><span class="feature-icon">▣</span><div><strong>Local storage</strong><small>Imported book files and downloaded pages will be tracked separately from catalogue metadata, so clearing a cache cannot accidentally delete personal files.</small></div></div><div class="feature-row"><span class="feature-icon">↻</span><div><strong>Download queue</strong><small>${rows.length} queued or recorded download task${rows.length === 1 ? '' : 's'} in this browser.</small></div></div></div></div>
-  ${rows.length ? `<div class="section-topline"><h2>Download tasks</h2></div>${rows.map(job => `<div class="library-card"><div class="library-cover library-cover-fallback">⇩</div><div class="library-info"><h3>${escapeHtml(job.status || 'Task')}</h3><p>${escapeHtml(job.lastError || 'Download job record')}</p></div><span class="pill-label">${Number(job.bytesDownloaded || 0).toLocaleString()} bytes</span></div>`).join('')}` : renderEmpty('Nothing downloaded yet', 'When chapter downloads are implemented, their status and storage usage will appear here.')}</section>`;
+  const rows = await (await import('./data/database.js')).getAllRecords('downloadJobs');
+  const info = [
+    { icon: 'download', title: 'Offline chapters', description: 'The catalogue API provides metadata only, so there is nothing to download yet.', planned: true },
+    { icon: 'database', title: 'Local storage', description: 'Downloaded pages and imported files will be tracked apart from catalogue data.' },
+    { icon: 'clock', title: 'Download queue', description: `${rows.length} task${rows.length === 1 ? '' : 's'} recorded on this device.` }
+  ];
+  return `<section>
+    <div class="page-head"><div><h1>Downloads</h1><p>Offline reading, when sources allow it.</p></div></div>
+    <div class="group">${info.map(row => listRow(row)).join('')}</div>
+    ${rows.length ? `<h2 class="group-title">Tasks</h2><div class="library-list">${rows.map(job => `<div class="library-card"><div class="library-cover library-cover-fallback">${icon('download')}</div><div class="library-info"><h3>${escapeHtml(job.status || 'Task')}</h3><p>${escapeHtml(job.lastError || 'Download task')}</p><span class="pill-label">${Number(job.bytesDownloaded || 0).toLocaleString()} bytes</span></div></div>`).join('')}</div>` : renderEmpty('Nothing downloaded yet', 'Download status and storage use will show here.')}
+    ${renderRoadmap('downloads')}
+  </section>`;
 }
 
 function chartMarkup(stats) {
@@ -220,25 +254,65 @@ function chartMarkup(stats) {
 
 async function renderProfile() {
   const stats = await getDashboardStatistics();
-  return `<section><div class="section-heading"><div><div class="eyebrow">Your account space</div><h1>Profile & statistics</h1><p>This first version stores your profile data locally; account sign-in is a future backend feature.</p></div></div>
-  <div class="surface profile-hero"><div class="profile-avatar">東</div><div><h1>Local Reader</h1><p>Tokyo Manga Lab · This device</p><span class="pill-label">No account required</span></div></div>
-  ${renderStats(stats)}
-  <div class="settings-layout"><section class="surface surface-pad settings-section"><h2>Reading activity</h2><p>Actual reading time and sessions will be counted when manga chapter reading is connected.</p>${chartMarkup(stats)}<div class="divider"></div><div class="feature-list"><div class="feature-row"><span class="feature-icon">✓</span><div><strong>${stats.completedChapters} completed chapters recorded</strong><small>Chapter-level totals become available after chapter tracking is implemented.</small></div></div><div class="feature-row"><span class="feature-icon">◷</span><div><strong>${Math.round(stats.activeSessionSeconds / 60)} minutes of active reading</strong><small>Only verified active session records are included; no time is inferred from a title being marked as reading.</small></div></div></div></section>
-  <section class="surface surface-pad settings-section"><h2>Library backup</h2><p>Export your metadata, collections and progress records. Imported or downloaded binary files are not embedded in this JSON backup.</p><div class="feature-list"><button class="button-primary" data-action="export-backup">Export JSON backup</button><button class="button" data-action="import-backup">Import JSON backup</button><button class="button" data-action="open-settings">Privacy & settings</button></div><p style="font-size:.7rem;margin-top:14px">Keep a copy outside this browser before clearing site data.</p></section></div></section>`;
+  const chevron = icon('chevronRight');
+  const groups = PROFILE_GROUPS.map(group => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${group.rows.map(row => listRow({ icon: row.icon, title: row.title, description: row.description, href: row.href, trail: chevron })).join('')}</div>`).join('');
+  const planned = plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true, action: 'planned-feature', attrs: `data-title="${escapeHtml(row.title)}"` })).join('');
+  return `<section>
+    <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p><span class="pill-label">No account needed</span></div></div>
+    ${renderStats(stats)}
+    ${groups}
+    <h2 class="group-title">Reading activity</h2>
+    <div class="group"><div class="surface-pad">${chartMarkup(stats)}<div class="divider"></div><p style="margin:0;font-size:.8rem">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of active reading. Time only counts once the reader is connected.</p></div></div>
+    <h2 class="group-title">Coming later</h2>
+    <div class="group">${planned}</div>
+    <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)}</p>
+  </section>`;
+}
+
+function settingRow(item) {
+  const s = state.settings;
+  if (item.type === 'planned') return listRow({ title: item.title, description: item.description, planned: true });
+  if (item.type === 'link') return listRow({ title: item.title, description: item.description, href: item.href, external: true, trail: icon('external', 'icon-sm') });
+  const copy = `<span class="row-copy"><strong>${escapeHtml(item.title)}</strong>${item.description ? `<small>${escapeHtml(item.description)}</small>` : ''}</span>`;
+  if (item.type === 'toggle') {
+    return `<label class="row">${copy}<span class="row-trail"><span class="switch"><input type="checkbox" data-setting="${item.key}" ${s[item.key] ? 'checked' : ''}><span class="switch-track"></span></span></span></label>`;
+  }
+  if (item.type === 'select') {
+    const options = item.options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${s[item.key] === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+    return `<div class="row">${copy}<span class="row-trail"><label class="sr-only" for="set-${item.key}">${escapeHtml(item.title)}</label><select class="select-field" id="set-${item.key}" data-setting="${item.key}">${options}</select></span></div>`;
+  }
+  if (item.type === 'action') {
+    return `<div class="row">${copy}<span class="row-trail"><button class="button button-small" type="button" data-action="${escapeHtml(item.action)}">${escapeHtml(item.button)}</button></span></div>${item.result ? '<p class="row-result" id="apiTestResult" aria-live="polite"></p>' : ''}`;
+  }
+  return `<div class="row is-info">${copy}<span class="row-trail"><span class="row-value" title="${escapeHtml(item.value)}">${escapeHtml(item.value)}</span></span></div>`;
+}
+
+function renderSettingsHome() {
+  const row = category => listRow({ icon: category.icon, title: category.title, description: category.summary, href: `#settings/${category.id}`, badge: category.planned ? 'Planned' : '', trail: icon('chevronRight') });
+  return `<section>
+    <a class="back-link" href="#profile">${icon('chevronLeft')}Profile</a>
+    <div class="page-head"><div><h1>Settings</h1><p>Choose a category.</p></div></div>
+    <div class="group">${SETTINGS_CATEGORIES.filter(c => !c.planned).map(row).join('')}</div>
+    <h2 class="group-title">Coming later</h2>
+    <div class="group">${SETTINGS_CATEGORIES.filter(c => c.planned).map(row).join('')}</div>
+    <p class="footer-note">Settings are saved on this device.</p>
+  </section>`;
+}
+
+function renderSettingsCategory(category) {
+  const groups = category.groups.map(group => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${group.items.map(settingRow).join('')}</div>`).join('');
+  return `<section>
+    <a class="back-link" href="#settings">${icon('chevronLeft')}Settings</a>
+    <div class="page-head"><div><h1>${escapeHtml(category.title)}</h1><p>${escapeHtml(category.summary)}</p></div></div>
+    ${category.planned ? '<div class="notice"><strong>Planned.</strong> These options are not available yet. They are listed so you can see what is coming.</div>' : ''}
+    ${groups}
+  </section>`;
 }
 
 async function renderSettings() {
   if (!state.settings) state.settings = await loadSettings();
-  const s = state.settings;
-  return `<section><div class="section-heading"><div><div class="eyebrow">Make it yours</div><h1>Settings</h1><p>Reader preferences and privacy controls. Some reader features arrive in later phases.</p></div></div>
-  <div class="settings-layout"><div class="surface surface-pad settings-section"><h2>Appearance</h2><p>Choose the theme for the Sakura-inspired reading space.</p>
-  <div class="toggle-row"><div class="toggle-copy"><strong>Colour theme</strong><small>Sakura Night is the approved default. Midnight Blue keeps the same layout with cooler accents.</small></div><select class="select-field setting-select" data-setting="theme"><option value="sakura" ${s.theme === 'sakura' ? 'selected' : ''}>Sakura Night</option><option value="midnight" ${s.theme === 'midnight' ? 'selected' : ''}>Midnight Blue</option></select></div>
-  <div class="toggle-row"><div class="toggle-copy"><strong>Reduce motion</strong><small>Minimize decorative animations and transitions.</small></div><label class="switch"><input type="checkbox" data-setting="reducedMotion" ${s.reducedMotion ? 'checked' : ''}><span class="switch-track"></span></label></div>
-  <div class="divider"></div><h2>Content safety & privacy</h2><div class="toggle-row"><div class="toggle-copy"><strong>Adult-content sources</strong><small>Off by default. Turning this preference on does not activate any adult source in this build; the public catalogue connector is still limited to safe and suggestive ratings.</small></div><label class="switch"><input type="checkbox" data-setting="adultContentEnabled" ${s.adultContentEnabled ? 'checked' : ''}><span class="switch-track"></span></label></div>
-  <div class="toggle-row"><div class="toggle-copy"><strong>Online catalogue search</strong><small>Allow requests to the configured MangaDex proxy. Your personal library remains locally available when this is off.</small></div><label class="switch"><input type="checkbox" data-setting="enableOnlineSearch" ${s.enableOnlineSearch ? 'checked' : ''}><span class="switch-track"></span></label></div>
-  <div class="notice warning" style="margin-top:14px"><strong>Privacy note:</strong> this build has no accounts or cloud sync. Adult-content preference is not age verification, and no explicit-content connector is configured.</div></div>
-  <aside class="surface surface-pad settings-section"><h2>Catalogue connection</h2><p>Initial source strategy: MangaDex first, with a modular source-adapter interface.</p><div class="feature-list"><div class="feature-row"><span class="feature-icon">⌕</span><div><strong>MangaDex</strong><small>Search metadata through the existing Cloudflare Worker.</small></div></div><div class="feature-row"><span class="feature-icon">◇</span><div><strong>API base URL</strong><small style="word-break:break-all">${escapeHtml(new URL('./', 'https://tokyo-manga-lab-api2.haribp720.workers.dev').origin)}</small></div></div><div class="feature-row"><span class="feature-icon">↻</span><div><strong>Future connectors</strong><small>Other sources and permitted novel connectors will be added independently after testing.</small></div></div></div><div class="divider"></div><button class="button" data-action="check-api">Test catalogue connection</button><p id="apiTestResult" style="font-size:.75rem;margin-top:11px" aria-live="polite"></p></aside></div>
-  <p class="footer-note">Settings are stored in IndexedDB on this device. Use Export backup before clearing browser site data.</p></section>`;
+  const category = findCategory(getRouteParam());
+  return category ? renderSettingsCategory(category) : renderSettingsHome();
 }
 
 async function loadSearch(query = state.query, page = 1) {
@@ -324,6 +398,12 @@ function chapterApiUnavailableMessage(error) {
   return error?.message || 'The chapter metadata API is unavailable.';
 }
 
+function chapterLanguageOptions() {
+  const current = state.detailsChapterLanguage;
+  const all = `<option value="all" ${current === 'all' ? 'selected' : ''}>All languages</option>`;
+  return all + CHAPTER_LANGUAGES.map(([value, label]) => `<option value="${value}" ${current === value ? 'selected' : ''}>${label}</option>`).join('');
+}
+
 function renderDetailsContent(item) {
   if (!item) return;
   const entry = getLibraryEntry(item.id);
@@ -343,7 +423,7 @@ function renderDetailsContent(item) {
   else if (!state.detailsChapters.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters in this result.</strong><span>Try another language or open the source page.</span></div>';
   const pagination = state.detailsChapterPagination;
   const pagesMarkup = pagination.total > pagination.limit ? `<div class="page-controls chapter-pager"><button class="button" data-action="chapter-page-back" ${pagination.page <= 1 ? 'disabled' : ''}>‹ Previous</button><div class="page-count"><strong>Page ${pagination.page}</strong>${Number(pagination.total).toLocaleString()} chapters</div><button class="button" data-action="chapter-page-next" ${!pagination.hasNext ? 'disabled' : ''}>Next ›</button></div>` : '';
-  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">＋ Add to library</button>`}${sourceLink}</div><section class="chapter-panel"><div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Chapter metadata from MangaDex. Reading opens the original source.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language"><option value="en" ${state.detailsChapterLanguage === 'en' ? 'selected' : ''}>English</option><option value="all" ${state.detailsChapterLanguage === 'all' ? 'selected' : ''}>All languages</option><option value="ja" ${state.detailsChapterLanguage === 'ja' ? 'selected' : ''}>Japanese</option></select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Tokyo Manga Lab does not proxy chapter pages or download chapter content in this release.</p>`;
+  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div><section class="chapter-panel"><div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Chapter metadata from MangaDex. Reading opens the original source.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Tokyo Manga Lab does not proxy chapter pages or download chapter content in this release.</p>`;
 }
 
 async function loadDetailsChapters(externalId, page = 1, language = state.detailsChapterLanguage, sequence = state.detailsSequence) {
@@ -384,7 +464,7 @@ async function openDetails(contentItemId) {
   state.detailsError = '';
   state.detailsChapters = [];
   state.detailsChapterPage = 1;
-  state.detailsChapterLanguage = 'en';
+  state.detailsChapterLanguage = state.settings?.preferredLanguage || 'en';
   state.detailsChapterPagination = { page: 1, limit: 24, total: 0, hasNext: false };
   renderDetailsContent(item);
   const dialog = document.getElementById('detailsDialog');
@@ -428,7 +508,7 @@ async function openDetails(contentItemId) {
       }
     }
   })();
-  const chaptersTask = loadDetailsChapters(item.externalId, 1, 'en', sequence);
+  const chaptersTask = loadDetailsChapters(item.externalId, 1, state.detailsChapterLanguage, sequence);
   await Promise.allSettled([detailsTask, chaptersTask]);
 }
 
@@ -529,9 +609,12 @@ async function uploadBackupFile(file) {
 
 function applyTheme() {
   const isMidnight = state.settings?.theme === 'midnight';
-  document.documentElement.dataset.theme = isMidnight ? 'midnight' : 'sakura';
-  document.documentElement.style.colorScheme = 'dark';
-  document.documentElement.classList.toggle('reduce-motion', Boolean(state.settings?.reducedMotion));
+  const root = document.documentElement;
+  root.dataset.theme = isMidnight ? 'midnight' : 'sakura';
+  root.dataset.coverSize = state.settings?.coverSize === 'compact' ? 'compact' : 'comfortable';
+  root.style.colorScheme = 'dark';
+  root.classList.toggle('reduce-motion', Boolean(state.settings?.reducedMotion));
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isMidnight ? '#070b13' : '#0a0910');
 }
 
 async function handleSettingChange(input) {
@@ -599,6 +682,7 @@ async function handleAction(action, target) {
     case 'export-backup': await downloadBackup(); break;
     case 'import-backup': document.getElementById('backupFileInput').click(); break;
     case 'open-settings': window.location.hash = '#settings'; break;
+    case 'planned-feature': toast(`${target.dataset.title || 'This feature'} is planned and not available yet.`); break;
     case 'check-api': await checkApi(); break;
     case 'retry-screen': await app.navigate(app.currentRoute()); break;
     default: break;
@@ -642,6 +726,9 @@ function bindUiEvents() {
         const row = state.library.find(entry => entry.contentItemId === itemId);
         const item = row?.item || state.results.find(entry => entry.id === itemId);
         if (item) { await setLibraryStatus(item, input.value); await refreshLibraryIndex(); await app.navigate('library'); toast('Reading status updated.'); }
+      } else if (input.matches('[data-action="chapter-language"]')) {
+        const item = currentDetailsItem();
+        if (item?.externalId) await loadDetailsChapters(item.externalId, 1, input.value);
       } else if (input.matches('[data-action="status-filter"]')) {
         state.libraryStatusFilter = input.value;
         await app.navigate('library');
@@ -661,6 +748,7 @@ function bindUiEvents() {
 }
 
 async function initialize() {
+  hydrateIcons();
   bindUiEvents();
   try {
     await openDatabase();
