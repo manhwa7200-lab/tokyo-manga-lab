@@ -1,8 +1,19 @@
 const API_BASE = "https://api.mangadex.org";
 const ALLOWED_ORIGIN = "https://tokyo720022-create.github.io";
+const ALLOWED_DEV_ORIGINS = new Set([
+  ALLOWED_ORIGIN,
+  "http://127.0.0.1:8000",
+  "http://localhost:8000"
+]);
 const MAX_QUERY_LENGTH = 100;
 const PAGE_SIZE = 24;
-const MAX_PAGE = 20;
+const MAX_SEARCH_PAGE = 20;
+const MAX_CHAPTER_PAGE = 1000;
+const SAFE_RATINGS = ["safe", "suggestive"];
+
+function isAllowedOrigin(origin) {
+  return !origin || ALLOWED_DEV_ORIGINS.has(origin);
+}
 
 function corsHeaders(origin) {
   const headers = {
@@ -11,7 +22,7 @@ function corsHeaders(origin) {
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  if (origin === ALLOWED_ORIGIN) headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN;
+  if (origin && ALLOWED_DEV_ORIGINS.has(origin)) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 }
 
@@ -27,9 +38,285 @@ function json(data, status, origin, extraHeaders = {}) {
   });
 }
 
+function requestId() {
+  try { return crypto.randomUUID(); } catch { return `req-${Date.now().toString(36)}`; }
+}
+
+function apiV1(data, origin, status = 200, extra = {}) {
+  return json({ data, meta: { apiVersion: "1", requestId: requestId() } }, status, origin, extra);
+}
+
+function apiError(code, message, origin, status = 400, extra = {}) {
+  return json({ error: { code, message }, meta: { apiVersion: "1", requestId: requestId() } }, status, origin, extra);
+}
+
 function pickText(value) {
   if (!value || typeof value !== "object") return "";
   return value.en || value["ja-ro"] || value.ja || Object.values(value)[0] || "";
+}
+
+function allTitleTexts(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.flatMap(entry => entry && typeof entry === "object" ? Object.values(entry) : [])
+    .filter(text => typeof text === "string" && text.trim()).map(text => text.trim()))];
+}
+
+function getRelations(item) {
+  return Array.isArray(item?.relationships) ? item.relationships : [];
+}
+
+function getNamedRelationships(item, wantedTypes) {
+  return [...new Set(getRelations(item)
+    .filter(rel => wantedTypes.includes(rel.type))
+    .map(rel => rel.attributes?.name)
+    .filter(name => typeof name === "string" && name.trim())
+    .map(name => name.trim()))];
+}
+
+function getCoverUrl(item) {
+  const rel = getRelations(item).find(entry => entry.type === "cover_art");
+  const fileName = rel?.attributes?.fileName;
+  return fileName && item?.id
+    ? `https://uploads.mangadex.org/covers/${encodeURIComponent(item.id)}/${encodeURIComponent(fileName)}.256.jpg`
+    : null;
+}
+
+function normalizeManga(item) {
+  const attrs = item?.attributes || {};
+  const tags = (attrs.tags || [])
+    .map(tag => pickText(tag.attributes?.name))
+    .filter(Boolean);
+  return {
+    sourceId: "mangadex",
+    externalId: String(item?.id || ""),
+    contentType: "manga",
+    title: pickText(attrs.title) || "Untitled manga",
+    alternateTitles: allTitleTexts(attrs.altTitles),
+    description: pickText(attrs.description),
+    coverUrl: getCoverUrl(item),
+    authors: getNamedRelationships(item, ["author"]),
+    artists: getNamedRelationships(item, ["artist"]),
+    genres: [...new Set(tags.map(tag => tag.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")))],
+    tags,
+    publicationStatus: normalizePublicationStatus(attrs.status),
+    releaseYear: attrs.year || null,
+    language: attrs.originalLanguage || null,
+    sourceUrl: item?.id ? `https://mangadex.org/title/${encodeURIComponent(item.id)}` : null,
+    contentRating: attrs.contentRating || "unknown"
+  };
+}
+
+function normalizePublicationStatus(value) {
+  const status = String(value || '').toLowerCase();
+  if (status === 'ongoing' || status === 'releasing') return 'releasing';
+  if (status === 'completed') return 'completed';
+  if (status === 'hiatus') return 'hiatus';
+  return 'unknown';
+}
+
+function isAllowedContent(item) {
+  return SAFE_RATINGS.includes(item?.attributes?.contentRating);
+}
+
+function parsePage(value, max = MAX_SEARCH_PAGE) {
+  const parsed = Number.parseInt(value || "1", 10);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(max, parsed)) : 1;
+}
+
+function validMangaId(id) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+async function fetchMangaDex(path, params = {}) {
+  const url = new URL(API_BASE + path);
+  for (const [key, value] of params) url.searchParams.append(key, String(value));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "TokyoMangaLab/0.4.0 (catalogue metadata connector)"
+      },
+      signal: controller.signal,
+      cf: { cacheTtl: 120, cacheEverything: true }
+    });
+    if (!response.ok) {
+      const err = new Error(`MangaDex returned HTTP ${response.status}.`);
+      err.status = response.status;
+      throw err;
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function mangaSearchParams(query, page) {
+  const params = [
+    ["limit", PAGE_SIZE],
+    ["offset", (page - 1) * PAGE_SIZE],
+    ["includes[]", "cover_art"],
+    ["includes[]", "author"],
+    ["includes[]", "artist"],
+    ["contentRating[]", "safe"],
+    ["contentRating[]", "suggestive"]
+  ];
+  if (query) params.push(["title", query], ["order[relevance]", "desc"]);
+  else params.push(["order[latestUploadedAt]", "desc"]);
+  return params;
+}
+
+async function doMangaSearch(query, page) {
+  const payload = await fetchMangaDex("/manga", mangaSearchParams(query, page));
+  const items = (payload.data || []).filter(isAllowedContent).map(normalizeManga);
+  const total = Math.max(0, Number(payload.total) || items.length);
+  return {
+    items,
+    pagination: {
+      page,
+      limit: PAGE_SIZE,
+      total,
+      hasNext: (page * PAGE_SIZE) < total
+    }
+  };
+}
+
+async function doMangaDetails(id) {
+  const payload = await fetchMangaDex(`/manga/${encodeURIComponent(id)}`, [
+    ["includes[]", "cover_art"], ["includes[]", "author"], ["includes[]", "artist"]
+  ]);
+  const item = payload.data;
+  if (!item || item.id !== id) return { kind: "missing" };
+  if (!isAllowedContent(item)) return { kind: "filtered" };
+  return { kind: "ok", item: normalizeManga(item) };
+}
+
+function normalizeChapter(chapter, mangaId) {
+  const attrs = chapter?.attributes || {};
+  const relations = getRelations(chapter);
+  const groups = relations.filter(rel => rel.type === "scanlation_group")
+    .map(rel => rel.attributes?.name).filter(Boolean);
+  const externalId = String(chapter?.id || "");
+  return {
+    sourceId: "mangadex",
+    externalId,
+    mangaExternalId: mangaId,
+    chapterNumber: attrs.chapter === undefined || attrs.chapter === null ? null : String(attrs.chapter),
+    volumeNumber: attrs.volume === undefined || attrs.volume === null ? null : String(attrs.volume),
+    title: attrs.title || null,
+    language: attrs.translatedLanguage || null,
+    pages: Math.max(0, Number(attrs.pages) || 0),
+    publishedAt: attrs.publishAt || attrs.readableAt || null,
+    scanlationGroups: [...new Set(groups)],
+    sourceUrl: externalId ? `https://mangadex.org/chapter/${encodeURIComponent(externalId)}` : null
+  };
+}
+
+async function doChapterList(id, page, language) {
+  const title = await doMangaDetails(id);
+  if (title.kind !== "ok") return title;
+  const params = [
+    ["limit", PAGE_SIZE],
+    ["offset", (page - 1) * PAGE_SIZE],
+    ["order[chapter]", "desc"],
+    ["contentRating[]", "safe"],
+    ["contentRating[]", "suggestive"],
+    ["includes[]", "scanlation_group"]
+  ];
+  if (language !== "all") params.push(["translatedLanguage[]", language]);
+  const payload = await fetchMangaDex(`/manga/${encodeURIComponent(id)}/feed`, params);
+  const items = (payload.data || []).map(chapter => normalizeChapter(chapter, id));
+  const total = Math.max(0, Number(payload.total) || items.length);
+  return {
+    kind: "ok",
+    data: items,
+    pagination: { page, limit: PAGE_SIZE, total, hasNext: page * PAGE_SIZE < total },
+    manga: title.item
+  };
+}
+
+async function handleLegacyManga(url, origin) {
+  const title = (url.searchParams.get("q") || "").trim().slice(0, MAX_QUERY_LENGTH);
+  const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
+  try {
+    const payload = await fetchMangaDex("/manga", mangaSearchParams(title, page));
+    const data = (payload.data || []).filter(isAllowedContent).map(item => {
+      const normalized = normalizeManga(item);
+      return {
+        id: normalized.externalId,
+        title: normalized.title,
+        description: normalized.description,
+        year: normalized.releaseYear,
+        status: item.attributes?.status || "unknown",
+        contentRating: normalized.contentRating,
+        authors: [...normalized.authors, ...normalized.artists].filter(Boolean),
+        tags: normalized.tags,
+        coverUrl: normalized.coverUrl,
+        mangaDexUrl: normalized.sourceUrl
+      };
+    });
+    return json({
+      source: "MangaDex",
+      attribution: "Catalogue metadata provided by MangaDex. Cover art and source links remain the property of their respective owners.",
+      page,
+      limit: PAGE_SIZE,
+      total: Math.max(0, Number(payload.total) || 0),
+      data
+    }, 200, origin);
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : 502;
+    return json({ error: status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : "Could not reach MangaDex. Try again shortly." }, status, origin);
+  }
+}
+
+async function handleV1Search(url, origin) {
+  const type = (url.searchParams.get("type") || "manga").toLowerCase();
+  if (type !== "manga") return apiError("UNSUPPORTED_CONTENT_TYPE", "Only manga search is available in this version.", origin, 400);
+  const query = (url.searchParams.get("query") || "").trim().slice(0, MAX_QUERY_LENGTH);
+  const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
+  try {
+    const result = await doMangaSearch(query, page);
+    return json({
+      data: result.items,
+      pagination: result.pagination,
+      meta: { apiVersion: "1", requestId: requestId(), source: "mangadex", cachedSeconds: 120 }
+    }, 200, origin);
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : 502;
+    return apiError(status === 429 ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE", status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : "Could not reach MangaDex. Try again shortly.", origin, status);
+  }
+}
+
+async function handleV1Details(id, origin) {
+  if (!validMangaId(id)) return apiError("INVALID_MANGA_ID", "The manga ID is not a valid MangaDex UUID.", origin, 400);
+  try {
+    const result = await doMangaDetails(id);
+    if (result.kind === "missing" || result.kind === "filtered") return apiError("TITLE_UNAVAILABLE", "This title is unavailable in the current catalogue mode.", origin, 404);
+    return json({ data: result.item, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex" } }, 200, origin);
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : error?.status === 404 ? 404 : 502;
+    const code = status === 429 ? "RATE_LIMITED" : status === 404 ? "TITLE_UNAVAILABLE" : "UPSTREAM_UNAVAILABLE";
+    const message = status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : status === 404 ? "This title was not found in the current catalogue." : "Could not load this title right now.";
+    return apiError(code, message, origin, status);
+  }
+}
+
+async function handleV1Chapters(id, url, origin) {
+  if (!validMangaId(id)) return apiError("INVALID_MANGA_ID", "The manga ID is not a valid MangaDex UUID.", origin, 400);
+  const page = parsePage(url.searchParams.get("page"), MAX_CHAPTER_PAGE);
+  const language = (url.searchParams.get("language") || "en").toLowerCase();
+  if (language !== "all" && !/^[a-z]{2,3}$/.test(language)) return apiError("INVALID_LANGUAGE", "Use a two- or three-letter language code, or 'all'.", origin, 400);
+  try {
+    const result = await doChapterList(id, page, language);
+    if (result.kind === "missing" || result.kind === "filtered") return apiError("TITLE_UNAVAILABLE", "This title is unavailable in the current catalogue mode.", origin, 404);
+    return json({ data: result.data, pagination: result.pagination, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex", language } }, 200, origin);
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : error?.status === 404 ? 404 : 502;
+    const code = status === 429 ? "RATE_LIMITED" : status === 404 ? "TITLE_UNAVAILABLE" : "UPSTREAM_UNAVAILABLE";
+    const message = status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : status === 404 ? "This title was not found in the current catalogue." : "Could not load chapter metadata right now.";
+    return apiError(code, message, origin, status);
+  }
 }
 
 export default {
@@ -38,107 +325,38 @@ export default {
     const origin = request.headers.get("Origin") || "";
 
     if (request.method === "OPTIONS") {
-      if (origin && origin !== ALLOWED_ORIGIN) {
-        return new Response("Origin not allowed", { status: 403 });
-      }
+      if (!isAllowedOrigin(origin)) return new Response("Origin not allowed", { status: 403 });
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
-
-    if (origin && origin !== ALLOWED_ORIGIN) {
-      return json({ error: "Origin not allowed." }, 403, origin);
-    }
-
-    if (request.method !== "GET") {
-      return json({ error: "Only GET requests are supported." }, 405, origin, { Allow: "GET, OPTIONS" });
-    }
+    if (!isAllowedOrigin(origin)) return json({ error: "Origin not allowed." }, 403, origin);
+    if (request.method !== "GET") return json({ error: "Only GET requests are supported." }, 405, origin, { Allow: "GET, OPTIONS" });
 
     if (url.pathname === "/health") {
-      return json({
-        ok: true,
-        service: "Tokyo Manga Lab MangaDex catalogue proxy",
-        contentRatings: ["safe", "suggestive"]
-      }, 200, origin);
+      return json({ ok: true, service: "Tokyo Manga Lab MangaDex catalogue proxy", contentRatings: SAFE_RATINGS, apiVersion: "1" }, 200, origin);
     }
+    if (url.pathname === "/manga") return handleLegacyManga(url, origin);
 
-    if (url.pathname !== "/manga") {
-      return json({ error: "Not found. Use /health or /manga?q=title&page=1." }, 404, origin);
+    if (url.pathname === "/api/v1/sources") {
+      return json({ data: [{
+        id: "mangadex", label: "MangaDex", contentTypes: ["manga"],
+        capabilities: { search: true, titleDetails: true, chapters: true, chapterContent: false, offlineDownloads: false }
+      }], meta: { apiVersion: "1", requestId: requestId() } }, 200, origin);
     }
+    if (url.pathname === "/api/v1/search") return handleV1Search(url, origin);
 
-    const title = (url.searchParams.get("q") || "").trim().slice(0, MAX_QUERY_LENGTH);
-    const page = Math.max(1, Math.min(MAX_PAGE, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1));
-    const apiUrl = new URL(API_BASE + "/manga");
-    apiUrl.searchParams.set("limit", String(PAGE_SIZE));
-    apiUrl.searchParams.set("offset", String((page - 1) * PAGE_SIZE));
-    for (const include of ["cover_art", "author", "artist"]) {
-      apiUrl.searchParams.append("includes[]", include);
+    const chaptersMatch = url.pathname.match(/^\/api\/v1\/manga\/([^/]+)\/chapters$/);
+    if (chaptersMatch) {
+      let id;
+      try { id = decodeURIComponent(chaptersMatch[1]); } catch { return apiError("INVALID_MANGA_ID", "The manga ID is invalid.", origin, 400); }
+      return handleV1Chapters(id, url, origin);
     }
-    for (const rating of ["safe", "suggestive"]) {
-      apiUrl.searchParams.append("contentRating[]", rating);
+    const detailsMatch = url.pathname.match(/^\/api\/v1\/manga\/([^/]+)$/);
+    if (detailsMatch) {
+      let id;
+      try { id = decodeURIComponent(detailsMatch[1]); } catch { return apiError("INVALID_MANGA_ID", "The manga ID is invalid.", origin, 400); }
+      return handleV1Details(id, origin);
     }
-
-    if (title) {
-      apiUrl.searchParams.set("title", title);
-      apiUrl.searchParams.set("order[relevance]", "desc");
-    } else {
-      apiUrl.searchParams.set("order[latestUploadedAt]", "desc");
-    }
-
-    try {
-      const upstream = await fetch(apiUrl.toString(), {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "TokyoMangaLab/0.1.0 (catalogue prototype)"
-        },
-        cf: { cacheTtl: 120, cacheEverything: true }
-      });
-
-      if (!upstream.ok) {
-        return json({
-          error: "MangaDex returned an error.",
-          upstreamStatus: upstream.status
-        }, upstream.status === 429 ? 429 : 502, origin);
-      }
-
-      const payload = await upstream.json();
-      const data = (payload.data || []).map((item) => {
-        const attrs = item.attributes || {};
-        const rels = item.relationships || [];
-        const coverRel = rels.find((rel) => rel.type === "cover_art");
-        const coverFile = coverRel && coverRel.attributes && coverRel.attributes.fileName;
-        const authors = rels
-          .filter((rel) => rel.type === "author" || rel.type === "artist")
-          .map((rel) => rel.attributes && rel.attributes.name)
-          .filter(Boolean);
-        const tags = (attrs.tags || [])
-          .map((tag) => pickText(tag.attributes && tag.attributes.name))
-          .filter(Boolean);
-
-        return {
-          id: item.id,
-          title: pickText(attrs.title) || "Untitled manga",
-          description: pickText(attrs.description),
-          year: attrs.year || null,
-          status: attrs.status || "unknown",
-          contentRating: attrs.contentRating || "safe",
-          authors: [...new Set(authors)],
-          tags,
-          coverUrl: coverFile
-            ? `https://uploads.mangadex.org/covers/${encodeURIComponent(item.id)}/${encodeURIComponent(coverFile)}.256.jpg`
-            : null,
-          mangaDexUrl: `https://mangadex.org/title/${encodeURIComponent(item.id)}`
-        };
-      });
-
-      return json({
-        source: "MangaDex",
-        attribution: "Catalogue metadata provided by MangaDex. Cover art and source links remain the property of their respective owners.",
-        page,
-        limit: PAGE_SIZE,
-        total: payload.total || 0,
-        data
-      }, 200, origin);
-    } catch (error) {
-      return json({ error: "Could not reach MangaDex. Try again shortly." }, 502, origin);
-    }
+    if (url.pathname.startsWith("/api/v1/")) return apiError("NOT_FOUND", "API route not found.", origin, 404);
+    return json({ error: "Not found. Use /health, /manga or the documented /api/v1 routes." }, 404, origin);
   }
 };

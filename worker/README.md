@@ -1,58 +1,37 @@
-# Tokyo Manga Lab — MangaDex catalogue connector
+# Tokyo Manga Lab — MangaDex Worker API v1.1
 
-This is a small Cloudflare Worker for MangaDex catalogue metadata only.
+This Worker patch adds normalized versioned metadata endpoints while preserving the existing `/health` and `/manga` routes for backward compatibility.
 
-Endpoints:
-- `GET /health` — deployment check
-- `GET /manga?q=one%20piece&page=1` — title search
-- `GET /manga?page=1` — latest-updated catalogue entries
+## Endpoints
 
-It returns up to 24 entries per page and includes MangaDex `safe` and `suggestive` ratings only. It does not proxy chapter pages or arbitrary upstream URLs.
+- `GET /health` — legacy health check.
+- `GET /manga?q=one%20piece&page=1` — legacy search response; up to 24 items.
+- `GET /api/v1/sources` — enabled source registry/capabilities.
+- `GET /api/v1/search?query=one%20piece&type=manga&page=1` — normalized search response.
+- `GET /api/v1/manga/{mangaDexUuid}` — normalized title metadata.
+- `GET /api/v1/manga/{mangaDexUuid}/chapters?page=1&language=en` — paginated chapter metadata only. Use `language=all` to list all available translation languages.
 
-## Deploy from Termux
+The API exposes MangaDex catalogue metadata and canonical source links only. It does **not** proxy page images, chapter content, arbitrary upstream URLs, downloads, or explicit-rated catalogue items. Chapter links open the original MangaDex page.
 
-Install tools:
+## Deploy with Termux
 
-```bash
-pkg update
-pkg install nodejs-lts git -y
-npm install --global wrangler
-```
-
-If you already cloned the site repository:
+From your existing repository clone, first review the diff and run tests. Then deploy only after you're ready:
 
 ```bash
 cd ~/tokyo-manga-lab
-```
-
-Otherwise:
-
-```bash
-cd ~
-git clone https://github.com/tokyo720022-create/tokyo-manga-lab.git
-cd ~/tokyo-manga-lab
-```
-
-Copy the `worker` directory from this package into `~/tokyo-manga-lab/worker`, then:
-
-```bash
-cd ~/tokyo-manga-lab/worker
-wrangler login
+npm run check
+npm test
+cd worker
+wrangler login # only if not already authenticated
 wrangler deploy
 ```
 
-Follow the Cloudflare prompts. Your endpoint will look like:
+After deployment, test `/health`, `/api/v1/sources`, `/api/v1/search?query=one%20piece&page=1`, and details/chapters for a MangaDex title UUID returned by search. The website UI continues to use the legacy search route while the new details and chapter list use the versioned routes.
 
-`https://tokyo-manga-lab-api.YOUR-SUBDOMAIN.workers.dev`
+## CORS
 
-Test these URLs in your browser, replacing the hostname with your actual deployment:
-- `/health`
-- `/manga?q=one%20piece&page=1`
+CORS allows `https://tokyo720022-create.github.io` plus local preview origins `http://127.0.0.1:8000` and `http://localhost:8000`. This is only browser access control, not authentication; all routes are public GET metadata endpoints. Adjust the origin list if your official host changes.
 
-The website UI still needs its API base URL wired to the deployed Worker before live results show up. Do not put Cloudflare account tokens in frontend code.
+## Content and source boundaries
 
-## Notes
-
-- CORS allows the GitHub Pages origin `https://tokyo720022-create.github.io`; update `ALLOWED_ORIGIN` if the website origin changes.
-- This connector handles catalogue metadata only. Follow MangaDex's current API usage rules, attribution requirements, and rate limits.
-- Keep the GitHub Pages deployment to the neutral, non-explicit prototype; do not use it to publish explicit content.
+Only `safe` and `suggestive` MangaDex ratings are available through this connector. The frontend adult-content preference is off by default, but this setting is not age verification. Follow MangaDex's current API policy and attribution rules. Do not host explicit content on GitHub Pages. This Worker provides chapter *metadata* only, not a reader or downloader.
