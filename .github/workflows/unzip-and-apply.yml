@@ -22,7 +22,29 @@ jobs:
       - name: Unzip onto a new branch
         env:
           ZIP_PATH: ${{ inputs.zip_path }}
-        run: bash scripts/apply-zip.sh "$ZIP_PATH"
+        run: |
+          python3 - <<'PY'
+          import os, shutil, sys, tempfile, zipfile
+          zp = os.environ["ZIP_PATH"]
+          if not os.path.isfile(zp):
+              sys.exit("ZIP not found: " + zp)
+          tmp = tempfile.mkdtemp()
+          with zipfile.ZipFile(zp) as z:
+              for name in z.namelist():
+                  if name.startswith("/") or ".." in name.split("/"):
+                      sys.exit("Unsafe path in ZIP: " + name)
+              z.extractall(tmp)
+          items = os.listdir(tmp)
+          src = tmp
+          if len(items) == 1 and os.path.isdir(os.path.join(tmp, items[0])):
+              src = os.path.join(tmp, items[0])
+          for skip in [".github", ".git", "__MACOSX", "node_modules"]:
+              shutil.rmtree(os.path.join(src, skip), ignore_errors=True)
+          shutil.copytree(src, ".", dirs_exist_ok=True)
+          if os.path.isfile(zp):
+              os.remove(zp)
+          print("Applied ZIP contents (skipped .github).")
+          PY
 
       - name: Commit and push branch
         id: push
@@ -50,5 +72,5 @@ jobs:
           gh pr create --base "${{ github.event.repository.default_branch }}" \
             --head "${{ steps.push.outputs.branch }}" \
             --title "Import files from ZIP" \
-            --body "Files unzipped by the 'Unzip and apply ZIP' workflow. Review the diff before merging." \
+            --body "Files unzipped by the Unzip and apply ZIP workflow. Review the diff before merging." \
           || echo "::warning::Could not open a PR automatically. The branch ${{ steps.push.outputs.branch }} was pushed; open the PR from the Branches page."
