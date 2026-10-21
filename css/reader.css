@@ -1,5 +1,4 @@
-/* Reserved for the manga reader and future Novel Reading Beta. The current build does not fetch chapter pages. */
-.reader-page{max-width:900px;margin:0 auto}.reader-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.reader-placeholder{margin-top:16px;padding:30px;border:1px dashed var(--line);border-radius:18px;text-align:center;color:var(--muted)}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
-
-.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+/* Reserved for the manga reader and the Novel Reading Beta. The current build does not fetch chapter pages. */
+.reader-page { max-width: 900px; margin: 0 auto; }
+.reader-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-radius: var(--radius-m); background: var(--surface); }
+.reader-placeholder { margin-top: 16px; padding: 30px; border-radius: var(--radius-l); background: var(--surface); text-align: center; color: var(--muted); }

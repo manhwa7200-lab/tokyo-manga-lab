@@ -12,3 +12,11 @@
 - Capacitor Android wrapper (config, www bundle script, icon generation).
 - `Build Android APK` and `Unzip and apply ZIP` GitHub Actions workflows.
 - See BUILD-APK.md.
+
+## 0.5.1 - UI refresh
+- New design: cover-first poster cards, shelves on Home, floating bottom navigation with icons.
+- Profile is now a hub of sections, with planned-feature slots.
+- Settings are organised as categories and sub-categories, driven by `settings-schema.js`.
+- New settings: cover size, sort library by, chapter language (now used when opening a title).
+- Fixed: the chapter language menu in the title sheet did nothing.
+- See docs/EXTENDING-UI.md.

@@ -6,6 +6,7 @@ export class AppController {
     this.renderers = renderers;
     this.renderSequence = 0;
     this.route = getCurrentRoute();
+    this.lastHash = null;
   }
 
   async navigate(route = getCurrentRoute()) {
@@ -19,6 +20,8 @@ export class AppController {
       if (sequence !== this.renderSequence) return;
       this.root.innerHTML = markup;
       this.root.removeAttribute('aria-busy');
+      // Start a new page at the top, but keep the scroll position when the same page re-renders after an action.
+      if (window.location.hash !== this.lastHash) { window.scrollTo(0, 0); this.lastHash = window.location.hash; }
     } catch (error) {
       if (sequence !== this.renderSequence) return;
       this.root.removeAttribute('aria-busy');

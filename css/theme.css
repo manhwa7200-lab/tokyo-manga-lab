@@ -1,1 +1,38 @@
-:root[data-theme="midnight"]{--bg:#070b13;--panel:#0f1521;--panel-raised:#151e2c;--panel-soft:#1a2638;--line:#27364a;--pink:#7dd3fc;--pink-strong:#67e8f9;--purple:#818cf8;--cyan:#a5f3fc;--good:#86efac}.theme-preview{display:inline-block;width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple))}
+/* Design tokens. Change colours here; nothing else hard-codes them. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0910;
+  --surface: #13111a;
+  --raised: #1b1824;
+  --raised-2: #242032;
+  --line: #2b2736;
+  --line-soft: #211e2b;
+  --text: #f3eee6;
+  --muted: #a8a2b6;
+  --faint: #716c80;
+  --accent: #f27aae;
+  --accent-ink: #2b0f1d;
+  --accent-soft: #f27aae22;
+  --accent-2: #9d8cf7;
+  --good: #7ddcb2;
+  --warn: #f2c06b;
+  --danger: #ff8fa8;
+  --radius-s: 10px;
+  --radius-m: 14px;
+  --radius-l: 22px;
+  --nav-h: 66px;
+  --gutter: 16px;
+  --shadow: 0 12px 40px #0007;
+}
+:root[data-theme="midnight"] {
+  --bg: #070b13;
+  --surface: #0e1420;
+  --raised: #151d2b;
+  --raised-2: #1d2839;
+  --line: #27364a;
+  --line-soft: #1b2636;
+  --accent: #6cc8f5;
+  --accent-ink: #06202e;
+  --accent-soft: #6cc8f522;
+  --accent-2: #8f9cff;
+}

@@ -1,11 +1,11 @@
 {
   "name": "tokyo-manga-lab",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Tokyo Manga Lab: local-first manga library (PWA) with an Android APK wrapper built by GitHub Actions",
   "scripts": {
-    "check": "node --check worker/src/index.js && node --check src/app.js && node --check src/data/database.js && node --check src/data/models.js && node --check src/data/repositories/library-repository.js && node --check src/services/api-client.js && node --check src/sources/source-registry.js && node --check src/sources/manga/mangadex-adapter.js && node --check src/features/settings/settings-service.js && node --check src/features/settings/legacy-migration.js && node --check src/features/statistics/statistics-service.js && node --check src/core/app-controller.js && node --check src/core/router.js && node --check worker/src/index.js && node --check sw.js",
+    "check": "node --check worker/src/index.js && node --check src/app.js && node --check src/data/database.js && node --check src/data/models.js && node --check src/data/repositories/library-repository.js && node --check src/services/api-client.js && node --check src/sources/source-registry.js && node --check src/sources/manga/mangadex-adapter.js && node --check src/features/settings/settings-service.js && node --check src/features/settings/legacy-migration.js && node --check src/features/statistics/statistics-service.js && node --check src/core/app-controller.js && node --check src/core/router.js && node --check worker/src/index.js && node --check sw.js && node --check src/features/settings/settings-schema.js && node --check src/features/profile/profile-sections.js && node --check src/features/feature-registry.js && node --check src/shared/icons.js && node --check src/shared/app-info.js && node --check src/shared/utils.js && node --check scripts/build-www.mjs",
     "test": "node --test",
     "build:www": "node scripts/build-www.mjs",
     "preview": "python3 -m http.server 8000 --bind 127.0.0.1"
