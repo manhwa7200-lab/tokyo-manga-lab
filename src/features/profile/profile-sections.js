@@ -10,6 +10,12 @@ export const PROFILE_GROUPS = Object.freeze([
     ]
   },
   {
+    id: 'accounts', title: 'Accounts',
+    rows: [
+      { id: 'anilist', title: 'AniList', description: 'Sign in and sync your manga list', icon: 'cloud', href: '#settings/account' }
+    ]
+  },
+  {
     id: 'preferences', title: 'Preferences',
     rows: [
       { id: 'appearance', title: 'Appearance', description: 'Theme, motion and cover size', icon: 'palette', href: '#settings/appearance' },

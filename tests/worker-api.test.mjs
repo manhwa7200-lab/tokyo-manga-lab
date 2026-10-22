@@ -160,3 +160,20 @@ test('local preview origin is allowed by CORS preflight', async () => {
   assert.equal(response.status, 204);
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'http://127.0.0.1:8000');
 });
+
+test('search results pass on exact AniList and MyAnimeList ids when MangaDex has them', async t => {
+  const withLinks = sampleManga();
+  withLinks.attributes.links = { al: '30013', mal: '13', raw: 'https://example.com' };
+  const noLinks = { ...sampleManga(), id: '33333333-3333-4333-8333-333333333333' };
+  noLinks.attributes = { ...sampleManga().attributes, links: { al: 'https://anilist.co/manga/1' } };
+  mockFetch(t, url => url.pathname === '/manga'
+    ? jsonResponse({ data: [withLinks, noLinks], total: 2 })
+    : new Response('unexpected', { status: 500 }));
+  const response = await worker.fetch(apiRequest('/manga?q=example'));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.data[0].anilistId, '30013');
+  assert.equal(body.data[0].malId, '13');
+  assert.equal(body.data[1].anilistId, null, 'non-numeric link values are dropped');
+  assert.equal(body.data[1].malId, null);
+});

@@ -8,10 +8,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
   defaultLibrarySort: 'recently-updated',
   preferredLanguage: 'en',
   enableOnlineSearch: true,
-  coverSize: 'comfortable'
+  coverSize: 'comfortable',
+  anilistClientId: '',
+  anilistPushEnabled: false
 });
 
-const BOOLEAN_KEYS = new Set(['adultContentEnabled', 'reducedMotion', 'enableOnlineSearch']);
+const BOOLEAN_KEYS = new Set(['adultContentEnabled', 'reducedMotion', 'enableOnlineSearch', 'anilistPushEnabled']);
 
 // Allowed values for every select setting come from the schema, so the UI and validation cannot drift apart.
 function allowedValues(key) {
@@ -27,6 +29,11 @@ function allowedValues(key) {
 export function normalizeSettingValue(key, value) {
   if (!Object.hasOwn(DEFAULT_SETTINGS, key)) throw new Error('Unknown setting.');
   if (BOOLEAN_KEYS.has(key)) return Boolean(value);
+  if (key === 'anilistClientId') {
+    const text = String(value ?? '').trim();
+    if (!/^\d{0,9}$/.test(text)) throw new Error('The AniList client ID is a number, for example 12345.');
+    return text;
+  }
   const allowed = allowedValues(key);
   if (allowed && !allowed.includes(value)) throw new Error('That option is not available.');
   return value;

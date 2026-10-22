@@ -116,3 +116,5 @@ a.row:active, button.row:active { background: var(--raised); }
 .page-count strong { display: block; color: var(--text); }
 .poster-wrap { position: relative; }
 .poster-link { grid-row: span 1; padding: 0; border: 0; background: none; align-self: start; }
+.row-trail .text-field { width: 132px; min-height: 40px; border-radius: 12px; font-size: .86rem; }
+.row-trail .button-danger { background: #ff8fa81c; color: var(--danger); }

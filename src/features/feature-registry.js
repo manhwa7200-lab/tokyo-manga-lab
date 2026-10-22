@@ -2,7 +2,7 @@
 // Add an entry here and it appears automatically in the "Planned" areas of the screens named in `screens`.
 // When a feature ships, delete its entry (or change status to 'available' and give it a real UI).
 export const FEATURES = Object.freeze([
-  { id: 'account-sync', title: 'Account and sync', description: 'Sign in and keep your library on every device.', icon: 'cloud', screens: ['profile'] },
+  { id: 'account-sync', title: 'Cloud account', description: 'Sign in to keep your library on every device, without AniList.', icon: 'cloud', screens: ['profile'] },
   { id: 'creator-studio', title: 'Creator Studio', description: 'Apply to publish your own work and manage drafts.', icon: 'pen', screens: ['profile'] },
   { id: 'reading-goals', title: 'Reading goals', description: 'Set a weekly goal and track streaks from real reading time.', icon: 'target', screens: ['profile', 'home'] },
   { id: 'notifications', title: 'Notifications', description: 'Get told when a followed title has a new chapter.', icon: 'bell', screens: ['profile'] },

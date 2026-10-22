@@ -20,3 +20,11 @@
 - New settings: cover size, sort library by, chapter language (now used when opening a title).
 - Fixed: the chapter language menu in the title sheet did nothing.
 - See docs/EXTENDING-UI.md.
+
+## 0.6.0 - AniList sync
+- Sign in with AniList (one-tap app link, or paste a token), import your manga list, and save status changes back.
+- Exact-ID matching only, never deletes, asks before adding titles to AniList, skips adult titles while that preference is off.
+- Android build registers the `tokyomangalab://anilist-auth` link and bundles the Capacitor App and Browser plugins.
+- Local database upgraded to version 2 (new `accountLinks` and `syncLinks` stores; existing data is kept).
+- Worker passes `anilistId` and `malId` through (not deployed by this change).
+- See docs/ANILIST.md.

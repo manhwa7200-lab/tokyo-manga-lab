@@ -1,5 +1,5 @@
 const DB_NAME = 'tokyo-manga-lab';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_DEFS = {
   contentItems: { keyPath: 'id', indexes: { title: 'title', contentType: 'contentType', updatedAt: 'updatedAt' } },
@@ -23,6 +23,8 @@ const STORE_DEFS = {
   statisticsCache: { keyPath: 'key', indexes: { updatedAt: 'updatedAt' } },
   syncOutbox: { keyPath: 'id', indexes: { status: 'status', createdAt: 'createdAt' } },
   activityEvents: { keyPath: 'id', indexes: { occurredAt: 'occurredAt', type: 'type' } },
+  accountLinks: { keyPath: 'provider' },
+  syncLinks: { keyPath: 'id', indexes: { contentItemId: 'contentItemId', provider: 'provider' } },
   schemaMeta: { keyPath: 'key' }
 };
 

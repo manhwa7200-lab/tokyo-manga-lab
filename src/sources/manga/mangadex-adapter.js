@@ -34,7 +34,8 @@ function normalizeManga(raw) {
     releaseYear: raw.releaseYear ?? raw.year ?? null,
     language: raw.language || raw.originalLanguage || null,
     sourceUrl: raw.sourceUrl || raw.mangaDexUrl || `https://mangadex.org/title/${encodeURIComponent(externalId)}`,
-    contentRating: raw.contentRating || 'unknown'
+    contentRating: raw.contentRating || 'unknown',
+    anilistId: /^\d{1,9}$/.test(String(raw.anilistId ?? '')) ? String(raw.anilistId) : null
   };
 }
 

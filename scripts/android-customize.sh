@@ -36,3 +36,33 @@ XML
 else
   echo "WARN: icon or ImageMagick missing - keeping default Capacitor icon"
 fi
+
+# --- AniList sign-in: let Android hand tokyomangalab://anilist-auth links back to the app ---
+MANIFEST=android/app/src/main/AndroidManifest.xml
+[ -f "$MANIFEST" ] || { echo "ERROR: $MANIFEST not found"; exit 1; }
+python3 - "$MANIFEST" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+if 'android:scheme="tokyomangalab"' in text:
+    print("Intent filter already present")
+    sys.exit(0)
+anchor = text.find('android:name=".MainActivity"')
+if anchor < 0:
+    sys.exit("ERROR: MainActivity not found in AndroidManifest.xml")
+close = text.find("</activity>", anchor)
+if close < 0:
+    sys.exit("ERROR: MainActivity closing tag not found")
+flt = '''
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tokyomangalab" android:host="anilist-auth" />
+            </intent-filter>
+        '''
+text = text[:close] + flt + text[close:]
+open(path, "w", encoding="utf-8").write(text)
+print("Added tokyomangalab://anilist-auth intent filter")
+PY
+grep -q 'android:scheme="tokyomangalab"' "$MANIFEST" || { echo "ERROR: AniList intent filter missing after edit"; exit 1; }

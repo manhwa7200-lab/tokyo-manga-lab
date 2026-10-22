@@ -81,6 +81,12 @@ function getCoverUrl(item) {
     : null;
 }
 
+// MangaDex stores other sites' ids in `links` (al = AniList, mal = MyAnimeList). Only plain numeric ids are passed on.
+function numericLink(value) {
+  const text = String(value ?? "").trim();
+  return /^\d{1,9}$/.test(text) ? text : null;
+}
+
 function normalizeManga(item) {
   const attrs = item?.attributes || {};
   const tags = (attrs.tags || [])
@@ -102,7 +108,9 @@ function normalizeManga(item) {
     releaseYear: attrs.year || null,
     language: attrs.originalLanguage || null,
     sourceUrl: item?.id ? `https://mangadex.org/title/${encodeURIComponent(item.id)}` : null,
-    contentRating: attrs.contentRating || "unknown"
+    contentRating: attrs.contentRating || "unknown",
+    anilistId: numericLink(attrs.links?.al),
+    malId: numericLink(attrs.links?.mal)
   };
 }
 
@@ -253,7 +261,9 @@ async function handleLegacyManga(url, origin) {
         authors: [...normalized.authors, ...normalized.artists].filter(Boolean),
         tags: normalized.tags,
         coverUrl: normalized.coverUrl,
-        mangaDexUrl: normalized.sourceUrl
+        mangaDexUrl: normalized.sourceUrl,
+        anilistId: normalized.anilistId,
+        malId: normalized.malId
       };
     });
     return json({
