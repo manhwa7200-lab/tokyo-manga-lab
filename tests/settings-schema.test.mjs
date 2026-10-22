@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SETTINGS_CATEGORIES, allSettingKeys } from '../src/features/settings/settings-schema.js';
+import { SETTINGS_CATEGORIES, SETTING_CONDITIONS, DYNAMIC_VALUES, allSettingKeys } from '../src/features/settings/settings-schema.js';
 import { DEFAULT_SETTINGS, normalizeSettingValue } from '../src/features/settings/settings-service.js';
 import { ICONS } from '../src/shared/icons.js';
 import { FEATURES, featuresFor } from '../src/features/feature-registry.js';
 import { PROFILE_GROUPS, plannedProfileRows } from '../src/features/profile/profile-sections.js';
 import { parseRoute } from '../src/core/router.js';
 
-const ITEM_TYPES = new Set(['toggle', 'select', 'action', 'link', 'info', 'planned']);
+const ITEM_TYPES = new Set(['toggle', 'select', 'action', 'link', 'info', 'text', 'planned']);
 
 test('settings categories have unique ids, titles and valid icons', () => {
   const ids = SETTINGS_CATEGORIES.map(category => category.id);
@@ -77,4 +77,22 @@ test('router parses sub-pages and rejects junk', () => {
   assert.deepEqual(parseRoute('#nope'), { route: 'home', param: '' });
   assert.deepEqual(parseRoute('#settings/<script>'), { route: 'settings', param: '' });
   assert.deepEqual(parseRoute(''), { route: 'home', param: '' });
+});
+
+test('conditional and live-value items only use names app.js understands', () => {
+  for (const category of SETTINGS_CATEGORIES) for (const group of category.groups) for (const item of group.items) {
+    if (item.when) assert.ok(SETTING_CONDITIONS.includes(item.when), `${item.title}: unknown condition ${item.when}`);
+    if (item.valueFrom) assert.ok(DYNAMIC_VALUES.includes(item.valueFrom), `${item.title}: unknown live value ${item.valueFrom}`);
+    if (item.type === 'info') assert.ok(item.value !== undefined || item.valueFrom, `${item.title} needs a value`);
+    if (item.type === 'text') assert.ok(item.key, 'text items need a key');
+  }
+});
+
+test('AniList settings validate their input', () => {
+  assert.equal(normalizeSettingValue('anilistClientId', ' 12345 '), '12345');
+  assert.equal(normalizeSettingValue('anilistClientId', ''), '');
+  assert.throws(() => normalizeSettingValue('anilistClientId', 'abc'));
+  assert.throws(() => normalizeSettingValue('anilistClientId', '1234567890123'));
+  assert.equal(normalizeSettingValue('anilistPushEnabled', 1), true);
+  assert.equal(DEFAULT_SETTINGS.anilistPushEnabled, false, 'pushing to AniList must be opt-in');
 });

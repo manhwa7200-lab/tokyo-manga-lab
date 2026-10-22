@@ -1,6 +1,6 @@
 import { AppController } from './core/app-controller.js';
 import { bindNavigation, getCurrentRoute, getRouteParam } from './core/router.js';
-import { openDatabase } from './data/database.js';
+import { getAllRecords, openDatabase } from './data/database.js';
 import {
   addItemToCollection, addToLibrary, cacheCatalogueItems, createCollection,
   exportBackup, getCatalogueItems, getCollections, getLibraryItems,
@@ -16,12 +16,18 @@ import { APP_VERSION } from './shared/app-info.js';
 import { CHAPTER_LANGUAGES, SETTINGS_CATEGORIES, findCategory } from './features/settings/settings-schema.js';
 import { PROFILE_GROUPS, plannedProfileRows } from './features/profile/profile-sections.js';
 import { featuresFor } from './features/feature-registry.js';
+import { ANILIST_TOKEN_DEFAULT_TTL_SECONDS, AUTH_ATTEMPT_MAX_AGE_MS, DEFAULT_ANILIST_CLIENT_ID } from './features/anilist/anilist-config.js';
+import { buildAuthorizeUrl, looksLikeToken, parseAuthRedirect } from './features/anilist/anilist-auth.js';
+import { clearAuthAttempt, getAccount, getAuthAttempt, markAuthAttempt } from './features/anilist/anilist-store.js';
+import { closeAuthPage, isNativeApp, listenForAppLinks, openAuthPage } from './features/anilist/anilist-native.js';
+import { connectWithToken, describeAccount, describeSummary, disconnect as disconnectAniList, flushOutbox, notifyLocalChange, runSync } from './features/anilist/anilist-sync.js';
 
 const root = document.getElementById('appView');
 const state = {
   route: 'home', settings: null, results: [], pagination: { page: 1, limit: 24, total: 0, hasNext: false },
   query: '', page: 1, genre: 'all', searchLoading: true, apiError: '', offlineResults: false,
   library: [], libraryById: new Map(), libraryStatusFilter: 'all', collections: [], selectedCollectionId: '',
+  anilist: { account: null, status: { connected: false, expired: false, label: 'Not connected' }, busy: false },
   detailsItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
 };
 
@@ -201,6 +207,7 @@ async function renderDiscover() {
 
 async function renderLibrary() {
   await refreshLibraryIndex();
+  const syncLinks = new Map((await getAllRecords('syncLinks')).map(row => [row.contentItemId, row]));
   state.collections = await getCollections();
   let entries = state.library;
   if (state.libraryStatusFilter !== 'all') entries = entries.filter(row => row.personalStatus === state.libraryStatusFilter);
@@ -218,7 +225,7 @@ async function renderLibrary() {
     const item = row.item;
     const id = escapeHtml(item.id);
     const options = ['planned', 'reading', 'completed', 'paused', 'dropped'].map(s => `<option value="${s}" ${row.personalStatus === s ? 'selected' : ''}>${s.charAt(0).toUpperCase()}${s.slice(1)}</option>`).join('');
-    return `<article class="library-card"><button class="poster-link" type="button" data-action="details" data-id="${id}" aria-label="Open details for ${escapeHtml(item.title)}">${coverMarkup(item, true)}</button><div class="library-info"><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(titleAuthor(item))} · Added ${escapeHtml(formatDate(row.addedAt))}</p>${row.isFavorite ? '<span class="pill-label accent">Favourite</span>' : ''}</div><div class="library-actions"><label class="sr-only" for="status-${id}">Status for ${escapeHtml(item.title)}</label><select class="select-field" id="status-${id}" data-library-status="${id}">${options}</select><button class="button button-small" data-action="favorite" data-id="${id}">${row.isFavorite ? 'Unfavourite' : 'Favourite'}</button><button class="button button-small" data-action="add-collection" data-id="${id}">Collection</button><button class="button button-small button-danger" data-action="remove" data-id="${id}">Remove</button></div></article>`;
+    return `<article class="library-card"><button class="poster-link" type="button" data-action="details" data-id="${id}" aria-label="Open details for ${escapeHtml(item.title)}">${coverMarkup(item, true)}</button><div class="library-info"><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(titleAuthor(item))} · Added ${escapeHtml(formatDate(row.addedAt))}</p>${row.isFavorite ? '<span class="pill-label accent">Favourite</span> ' : ''}${syncLinks.has(item.id) ? `<span class="pill-label">AniList${syncLinks.get(item.id).remoteProgress ? ` · ch. ${Number(syncLinks.get(item.id).remoteProgress)}` : ''}</span>` : ''}</div><div class="library-actions"><label class="sr-only" for="status-${id}">Status for ${escapeHtml(item.title)}</label><select class="select-field" id="status-${id}" data-library-status="${id}">${options}</select><button class="button button-small" data-action="favorite" data-id="${id}">${row.isFavorite ? 'Unfavourite' : 'Favourite'}</button><button class="button button-small" data-action="add-collection" data-id="${id}">Collection</button><button class="button button-small button-danger" data-action="remove" data-id="${id}">Remove</button></div></article>`;
   }).join('')}</div>` : renderEmpty('Your library is empty', 'Search MangaDex and save titles to build your shelf.', '<a class="button-primary" href="#discover">Discover manga</a>');
   const collectionName = state.selectedCollectionId ? escapeHtml(state.collections.find(c => c.id === state.selectedCollectionId)?.name || 'Collection') : 'All titles';
   return `<section>
@@ -254,11 +261,12 @@ function chartMarkup(stats) {
 
 async function renderProfile() {
   const stats = await getDashboardStatistics();
+  await refreshAniList();
   const chevron = icon('chevronRight');
   const groups = PROFILE_GROUPS.map(group => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${group.rows.map(row => listRow({ icon: row.icon, title: row.title, description: row.description, href: row.href, trail: chevron })).join('')}</div>`).join('');
   const planned = plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true, action: 'planned-feature', attrs: `data-title="${escapeHtml(row.title)}"` })).join('');
   return `<section>
-    <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p><span class="pill-label">No account needed</span></div></div>
+    <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p>${state.anilist.status.connected ? `<span class="pill-label accent">${escapeHtml(state.anilist.status.label.replace('Connected as ', 'AniList: '))}</span>` : '<span class="pill-label">No account needed</span>'}</div></div>
     ${renderStats(stats)}
     ${groups}
     <h2 class="group-title">Reading activity</h2>
@@ -267,6 +275,109 @@ async function renderProfile() {
     <div class="group">${planned}</div>
     <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)}</p>
   </section>`;
+}
+
+
+// ---------- AniList ----------
+async function refreshAniList() {
+  state.anilist.account = await getAccount();
+  state.anilist.status = describeAccount(state.anilist.account);
+}
+
+const anilistClientId = () => String(state.settings?.anilistClientId || DEFAULT_ANILIST_CLIENT_ID || '').trim();
+
+async function startAniListSignIn() {
+  if (!isNativeApp()) { toast('One-tap sign-in works in the Android app. In a browser, use "Paste a token instead".'); return; }
+  const url = buildAuthorizeUrl(anilistClientId());
+  await markAuthAttempt();
+  await openAuthPage(url);
+}
+
+async function finishAniListConnect(tokenInfo) {
+  const account = await connectWithToken(tokenInfo);
+  await refreshAniList();
+  toast(`Connected to AniList as ${account.viewer.name}.`);
+  if (!state.settings.anilistPushEnabled && window.confirm('Also save the status changes you make here on AniList? Sync never deletes anything. You can change this in Settings.')) {
+    await saveSetting('anilistPushEnabled', true);
+    state.settings = { ...state.settings, anilistPushEnabled: true };
+  }
+  if (window.location.hash === '#settings/account') await app.navigate('settings');
+  else window.location.hash = '#settings/account';
+}
+
+// Android hands tokyomangalab://anilist-auth#access_token=... back to the app. Accept it only right after we started sign-in.
+async function handleAniListRedirect(urlString) {
+  const parsed = parseAuthRedirect(urlString);
+  if (!parsed.ok && parsed.reason === 'not-ours') return;
+  await closeAuthPage();
+  const attempt = await getAuthAttempt();
+  await clearAuthAttempt();
+  if (!attempt || Date.now() - attempt.startedAt > AUTH_ATTEMPT_MAX_AGE_MS) { toast('That sign-in link was not expected. Start sign-in from Settings.'); return; }
+  if (!parsed.ok) { toast(parsed.reason === 'denied' ? 'AniList sign-in was cancelled.' : 'AniList did not send a sign-in token. Try again.'); return; }
+  try { await finishAniListConnect(parsed); }
+  catch (error) { console.error(error); toast(error?.message || 'Could not finish AniList sign-in.'); }
+}
+
+async function pasteAniListToken() {
+  const raw = window.prompt('Paste your AniList access token:');
+  if (raw === null) return;
+  const token = raw.trim();
+  if (!looksLikeToken(token)) { toast('That does not look like an AniList token.'); return; }
+  await finishAniListConnect({ accessToken: token, expiresAt: Date.now() + ANILIST_TOKEN_DEFAULT_TTL_SECONDS * 1000 });
+}
+
+async function signOutAniList() {
+  if (!window.confirm('Sign out of AniList on this device? Your library stays as it is.')) return;
+  await disconnectAniList();
+  await refreshAniList();
+  await app.navigate('settings');
+  toast('Signed out of AniList.');
+}
+
+async function syncAniList() {
+  if (state.anilist.busy) return;
+  state.anilist.busy = true;
+  const say = text => { const out = document.getElementById('anilistResult'); if (out) out.textContent = text; };
+  try {
+    say('Starting sync');
+    const summary = await runSync({
+      pushEnabled: Boolean(state.settings.anilistPushEnabled),
+      allowAdult: Boolean(state.settings.adultContentEnabled),
+      confirmPush: count => window.confirm(`Add or update ${count} title${count === 1 ? '' : 's'} on your AniList account from this app? Nothing is deleted.`),
+      onProgress: say
+    });
+    await refreshAniList();
+    await refreshLibraryIndex();
+    await app.navigate('settings');
+    say(describeSummary(summary));
+    toast('AniList sync finished.');
+  } catch (error) {
+    console.error(error);
+    await refreshAniList();
+    await app.navigate('settings');
+    say(error?.message || 'AniList sync failed.');
+  } finally { state.anilist.busy = false; }
+}
+
+// After a status change here: queue it for AniList when push is on and the title has an exact AniList id.
+function queueAniListPush(contentItemId) {
+  if (!state.settings?.anilistPushEnabled || !state.anilist.status.connected) return;
+  notifyLocalChange(contentItemId).catch(error => { console.warn('AniList push not queued:', error); });
+}
+
+function dynamicValue(name) {
+  if (name === 'anilistStatus') return state.anilist.status.label;
+  if (name === 'anilistLastSync') {
+    const last = state.anilist.account?.lastSync;
+    return last ? `${new Date(last.at).toLocaleString()}` : 'Not synced yet';
+  }
+  return '';
+}
+
+function itemVisible(item) {
+  if (item.when === 'anilistConnected') return state.anilist.status.connected;
+  if (item.when === 'anilistDisconnected') return !state.anilist.status.connected;
+  return true;
 }
 
 function settingRow(item) {
@@ -281,10 +392,14 @@ function settingRow(item) {
     const options = item.options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${s[item.key] === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
     return `<div class="row">${copy}<span class="row-trail"><label class="sr-only" for="set-${item.key}">${escapeHtml(item.title)}</label><select class="select-field" id="set-${item.key}" data-setting="${item.key}">${options}</select></span></div>`;
   }
-  if (item.type === 'action') {
-    return `<div class="row">${copy}<span class="row-trail"><button class="button button-small" type="button" data-action="${escapeHtml(item.action)}">${escapeHtml(item.button)}</button></span></div>${item.result ? '<p class="row-result" id="apiTestResult" aria-live="polite"></p>' : ''}`;
+  if (item.type === 'text') {
+    return `<div class="row">${copy}<span class="row-trail"><label class="sr-only" for="set-${item.key}">${escapeHtml(item.title)}</label><input class="field text-field" id="set-${item.key}" type="text" inputmode="${escapeHtml(item.inputMode || 'text')}" autocomplete="off" placeholder="${escapeHtml(item.placeholder || '')}" value="${escapeHtml(s[item.key] || '')}" data-setting="${item.key}"></span></div>`;
   }
-  return `<div class="row is-info">${copy}<span class="row-trail"><span class="row-value" title="${escapeHtml(item.value)}">${escapeHtml(item.value)}</span></span></div>`;
+  if (item.type === 'action') {
+    return `<div class="row">${copy}<span class="row-trail"><button class="button button-small ${item.danger ? 'button-danger' : ''}" type="button" data-action="${escapeHtml(item.action)}">${escapeHtml(item.button)}</button></span></div>${item.resultId ? `<p class="row-result" id="${escapeHtml(item.resultId)}" aria-live="polite"></p>` : ''}`;
+  }
+  const value = item.valueFrom ? dynamicValue(item.valueFrom) : item.value;
+  return `<div class="row is-info">${copy}<span class="row-trail"><span class="row-value" title="${escapeHtml(value)}">${escapeHtml(value)}</span></span></div>`;
 }
 
 function renderSettingsHome() {
@@ -300,7 +415,7 @@ function renderSettingsHome() {
 }
 
 function renderSettingsCategory(category) {
-  const groups = category.groups.map(group => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${group.items.map(settingRow).join('')}</div>`).join('');
+  const groups = category.groups.map(group => ({ group, items: group.items.filter(itemVisible) })).filter(({ items }) => items.length).map(({ group, items }) => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${items.map(settingRow).join('')}</div>`).join('');
   return `<section>
     <a class="back-link" href="#settings">${icon('chevronLeft')}Settings</a>
     <div class="page-head"><div><h1>${escapeHtml(category.title)}</h1><p>${escapeHtml(category.summary)}</p></div></div>
@@ -311,6 +426,7 @@ function renderSettingsCategory(category) {
 
 async function renderSettings() {
   if (!state.settings) state.settings = await loadSettings();
+  await refreshAniList();
   const category = findCategory(getRouteParam());
   return category ? renderSettingsCategory(category) : renderSettingsHome();
 }
@@ -390,6 +506,13 @@ function safeMangaDexTitleUrl(value) {
   } catch { return ''; }
 }
 
+function safeAniListUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.origin === 'https://anilist.co' && /^\/manga\/\d+/.test(url.pathname) ? url.href : '';
+  } catch { return ''; }
+}
+
 function chapterApiUnavailableMessage(error) {
   if (error?.status === 404) return 'The deployed Worker needs the new details/chapters API routes from the V1.1 package.';
   if (error?.code === 'NETWORK_ERROR' && ['localhost', '127.0.0.1'].includes(location.hostname)) {
@@ -407,8 +530,9 @@ function chapterLanguageOptions() {
 function renderDetailsContent(item) {
   if (!item) return;
   const entry = getLibraryEntry(item.id);
-  const safeSourceUrl = item.sourceId === 'mangadex' ? safeMangaDexTitleUrl(item.sourceUrl) : '';
-  const sourceLink = safeSourceUrl ? `<a class="button-primary" href="${escapeHtml(safeSourceUrl)}" target="_blank" rel="noopener noreferrer">Open MangaDex ↗</a>` : '';
+  const safeSourceUrl = item.sourceId === 'mangadex' ? safeMangaDexTitleUrl(item.sourceUrl) : item.sourceId === 'anilist' ? safeAniListUrl(item.sourceUrl) : '';
+  const sourceName = item.sourceId === 'anilist' ? 'AniList' : 'MangaDex';
+  const sourceLink = safeSourceUrl ? `<a class="button-primary" href="${escapeHtml(safeSourceUrl)}" target="_blank" rel="noopener noreferrer">Open ${sourceName} ↗</a>` : '';
   const metadataNotice = state.detailsMetadataError ? `<div class="notice warning"><strong>Using cached metadata.</strong> ${escapeHtml(state.detailsMetadataError)}</div>` : '';
   const chapterRows = state.detailsChapters.map(chapter => {
     const volume = chapter.volumeNumber ? `Vol. ${chapter.volumeNumber} · ` : '';
@@ -423,7 +547,7 @@ function renderDetailsContent(item) {
   else if (!state.detailsChapters.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters in this result.</strong><span>Try another language or open the source page.</span></div>';
   const pagination = state.detailsChapterPagination;
   const pagesMarkup = pagination.total > pagination.limit ? `<div class="page-controls chapter-pager"><button class="button" data-action="chapter-page-back" ${pagination.page <= 1 ? 'disabled' : ''}>‹ Previous</button><div class="page-count"><strong>Page ${pagination.page}</strong>${Number(pagination.total).toLocaleString()} chapters</div><button class="button" data-action="chapter-page-next" ${!pagination.hasNext ? 'disabled' : ''}>Next ›</button></div>` : '';
-  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div><section class="chapter-panel"><div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Chapter metadata from MangaDex. Reading opens the original source.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Tokyo Manga Lab does not proxy chapter pages or download chapter content in this release.</p>`;
+  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? 'AniList title' : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div><section class="chapter-panel"><div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Chapter metadata from MangaDex. Reading opens the original source.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Tokyo Manga Lab does not proxy chapter pages or download chapter content in this release.</p>`;
 }
 
 async function loadDetailsChapters(externalId, page = 1, language = state.detailsChapterLanguage, sequence = state.detailsSequence) {
@@ -530,6 +654,7 @@ async function toggleLibrary(itemId) {
     toast('Removed from your library. Progress and cached metadata are preserved.');
   } else {
     await addToLibrary(item, 'planned');
+    queueAniListPush(item.id);
     toast('Added to your local library.');
   }
   await refreshLibraryIndex();
@@ -541,6 +666,7 @@ async function markReading(itemId) {
   const item = [...state.results, ...state.library.map(row => row.item)].find(row => row?.id === itemId);
   if (!item) { toast('Title unavailable. Search again to reload its metadata.'); return; }
   await setLibraryStatus(item, 'reading');
+  queueAniListPush(item.id);
   await refreshLibraryIndex();
   toast('Status saved as Reading. Chapter reading will connect in a later API phase.');
   await app.navigate(app.currentRoute());
@@ -684,6 +810,10 @@ async function handleAction(action, target) {
     case 'open-settings': window.location.hash = '#settings'; break;
     case 'planned-feature': toast(`${target.dataset.title || 'This feature'} is planned and not available yet.`); break;
     case 'check-api': await checkApi(); break;
+    case 'anilist-connect': await startAniListSignIn(); break;
+    case 'anilist-paste-token': await pasteAniListToken(); break;
+    case 'anilist-sync': await syncAniList(); break;
+    case 'anilist-disconnect': await signOutAniList(); break;
     case 'retry-screen': await app.navigate(app.currentRoute()); break;
     default: break;
   }
@@ -725,7 +855,7 @@ function bindUiEvents() {
         const itemId = input.dataset.libraryStatus;
         const row = state.library.find(entry => entry.contentItemId === itemId);
         const item = row?.item || state.results.find(entry => entry.id === itemId);
-        if (item) { await setLibraryStatus(item, input.value); await refreshLibraryIndex(); await app.navigate('library'); toast('Reading status updated.'); }
+        if (item) { await setLibraryStatus(item, input.value); queueAniListPush(item.id); await refreshLibraryIndex(); await app.navigate('library'); toast('Reading status updated.'); }
       } else if (input.matches('[data-action="chapter-language"]')) {
         const item = currentDetailsItem();
         if (item?.externalId) await loadDetailsChapters(item.externalId, 1, input.value);
@@ -757,6 +887,8 @@ async function initialize() {
     state.settings = await loadSettings();
     applyTheme();
     await refreshLibraryIndex();
+    await refreshAniList();
+    await listenForAppLinks(handleAniListRedirect);
     bindNavigation(route => { app.navigate(route); });
     await loadSearch('', 1);
     await app.navigate(getCurrentRoute());
@@ -769,6 +901,7 @@ async function initialize() {
       setConnectionStatus('offline', 'Catalogue offline');
       console.warn('Catalogue health check failed:', error.message);
     }
+    if (state.settings.anilistPushEnabled && state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message));
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Offline app-shell registration skipped:', error));
     }

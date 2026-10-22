@@ -5,8 +5,11 @@
 //   select   - one of `options`, saved under `key`
 //   action   - a button; `action` is a data-action name handled in app.js
 //   link     - opens an https URL in a new tab
-//   info     - read-only value (`value`)
+//   text     - short text, saved under `key` (use `inputMode` and `placeholder`)
+//   info     - read-only value (`value`, or `valueFrom` for a live value computed in app.js)
 //   planned  - not built yet; shown dimmed with a "Planned" badge
+//
+// Any item may carry `when`: 'anilistConnected' or 'anilistDisconnected' to show it only in that state.
 //
 // To add a setting: add the key to DEFAULT_SETTINGS in settings-service.js, then add an item here.
 import { APP_NAME, APP_VERSION, MANGADEX_URL, REPO_URL } from '../../shared/app-info.js';
@@ -90,7 +93,7 @@ export const SETTINGS_CATEGORIES = Object.freeze([
       ] },
       { id: 'connection', title: 'Connection', items: [
         { type: 'info', title: 'API address', value: API_BASE_URL },
-        { type: 'action', action: 'check-api', title: 'Test connection', description: 'Check that the catalogue API is reachable.', button: 'Test', result: true }
+        { type: 'action', action: 'check-api', title: 'Test connection', description: 'Check that the catalogue API is reachable.', button: 'Test', resultId: 'apiTestResult' }
       ] }
     ]
   },
@@ -105,13 +108,23 @@ export const SETTINGS_CATEGORIES = Object.freeze([
     ]
   },
   {
-    id: 'account', title: 'Account and sync', icon: 'cloud', summary: 'Sign in and sync devices', planned: true,
+    id: 'account', title: 'Account and sync', icon: 'cloud', summary: 'AniList sync and future accounts',
     groups: [
-      { id: 'account', title: 'Account', items: [
-        { type: 'planned', id: 'sign-in', title: 'Sign in', description: 'Create an account to sync and to apply as a creator.' },
+      { id: 'anilist', title: 'AniList', items: [
+        { type: 'info', title: 'Account', valueFrom: 'anilistStatus' },
+        { type: 'text', key: 'anilistClientId', title: 'AniList client ID', description: 'Create a free app at anilist.co/settings/developer and set its redirect URL to tokyomangalab://anilist-auth. Then paste the app ID (a number) here.', inputMode: 'numeric', placeholder: 'Number', when: 'anilistDisconnected' },
+        { type: 'action', action: 'anilist-connect', title: 'Sign in with AniList', description: 'Opens AniList. Approve access and you return to this app.', button: 'Sign in', when: 'anilistDisconnected' },
+        { type: 'action', action: 'anilist-paste-token', title: 'Paste a token instead', description: 'Use this if the sign-in does not return to the app.', button: 'Paste', when: 'anilistDisconnected' },
+        { type: 'toggle', key: 'anilistPushEnabled', title: 'Send changes to AniList', description: 'When on, status changes you make here are also saved on AniList. Sync never deletes anything on either side.', when: 'anilistConnected' },
+        { type: 'action', action: 'anilist-sync', title: 'Sync now', description: 'Bring your AniList manga list in, and send your changes back when that is on.', button: 'Sync', resultId: 'anilistResult', when: 'anilistConnected' },
+        { type: 'info', title: 'Last sync', valueFrom: 'anilistLastSync', when: 'anilistConnected' },
+        { type: 'action', action: 'anilist-disconnect', title: 'Sign out', description: 'Removes the sign-in from this device. To revoke access completely, remove the app at anilist.co/settings/apps.', button: 'Sign out', danger: true, when: 'anilistConnected' }
+      ] },
+      { id: 'tokyo-account', title: 'Tokyo Manga Lab account', items: [
+        { type: 'planned', id: 'sign-in', title: 'Sign in', description: 'Create an account to sync without AniList and to apply as a creator.' },
         { type: 'planned', id: 'profile-details', title: 'Profile details', description: 'Name, avatar and bio.' }
       ] },
-      { id: 'sync', title: 'Sync', items: [
+      { id: 'sync', title: 'Cloud sync', items: [
         { type: 'planned', id: 'cloud-sync', title: 'Cloud sync', description: 'Keep library and progress identical on every device.' }
       ] }
     ]
@@ -143,6 +156,9 @@ export const SETTINGS_CATEGORIES = Object.freeze([
 export function findCategory(id) {
   return SETTINGS_CATEGORIES.find(category => category.id === id) || null;
 }
+
+export const SETTING_CONDITIONS = Object.freeze(['anilistConnected', 'anilistDisconnected']);
+export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync']);
 
 export function allSettingKeys() {
   const keys = [];

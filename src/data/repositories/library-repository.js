@@ -36,6 +36,19 @@ export async function cacheCatalogueItems(items) {
         lastCheckedAt: now
       });
     }
+    // An exact AniList id (from MangaDex links or an AniList import) maps to the same internal item.
+    const anilistId = raw.anilistId == null ? '' : String(raw.anilistId);
+    if (/^\d{1,9}$/.test(anilistId)) {
+      const linkKey = `anilist:${anilistId}`;
+      const taken = await getRecord('sourceEntries', linkKey);
+      if (!taken || taken.contentItemId === item.id) {
+        sourceEntries.push({
+          id: linkKey, contentItemId: item.id, sourceId: 'anilist', externalId: anilistId,
+          sourceUrl: `https://anilist.co/manga/${anilistId}`, sourceTitle: item.title, language: null,
+          availabilityStatus: 'available', lastCheckedAt: now
+        });
+      }
+    }
   }
   await Promise.all([putMany('contentItems', contentItems), putMany('sourceEntries', sourceEntries)]);
   return contentItems;
