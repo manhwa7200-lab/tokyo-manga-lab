@@ -38,3 +38,8 @@
 - Adult MangaDex ratings (erotica, pornographic) are available only in the Android app, behind the off-by-default preference with a confirmation. The web demo never receives them. Loli/shota-tagged titles are blocked in every mode.
 - New settings: reading mode, page fit, image quality.
 - No third-party adult sites were added; see docs/ADULT-SOURCES.md.
+
+## 0.7.1 - Reader image recovery
+- If the WebView will not show a page image, the reader now fetches the same address through the app's own network layer (Capacitor native HTTP) and shows that copy. It also reports the real size and X-Cache result to MangaDex in that case.
+- When a page still fails, the message says why (refused 403, not found 404, rate limited, could not connect, not an image) and names the image server host and port, so a blocked network can be told apart from an expired address.
+- Fix: a failed page no longer needs an automatic address refresh before the app-network fallback is tried.
