@@ -8,6 +8,13 @@ Open a title, then tap **Read** on a chapter (the ↗ button opens it on MangaDe
 3. Node addresses expire. The app asks for fresh ones after 14 minutes or when an image fails (at most 4 automatic refreshes per visit, 3 seconds apart). A failed page shows a retry button.
 4. MangaDex asks every client to report image loads from its network nodes, so the app sends `{ url, success, cached, bytes, duration }` to `api.mangadex.network/report`. Nothing about you, your library or what you read is included. `bytes` comes from the browser's resource timing and is 0 when the browser hides cross-origin sizes; `cached` is always false because the app cannot see the `X-Cache` header from an `<img>` element.
 
+## When a page will not load
+1. The image is requested normally by the WebView.
+2. If that fails, the Android app asks its own network layer (Capacitor native HTTP) for the same address and shows the result. This sidesteps WebView-only restrictions and gives exact size and cache information for MangaDex's reports.
+3. If that also fails, the app asks the Worker for fresh addresses once (expired addresses are the usual cause) and tries again.
+4. If the page still cannot load, a box under it says why and which server and port it tried (for example: refused 403, not found 404, or could not connect, which often means a network or ISP is blocking non-standard ports). **Retry** forces a fresh address.
+In a plain browser (no app network layer) only steps 1, 3 and 4 apply.
+
 ## Modes and controls
 - **Vertical scroll**: all pages in a column, loaded shortly before they scroll into view.
 - **Right to left / left to right**: one page at a time. Tap the left or right 30% of the screen (swapped for right to left), use the arrow keys or Space, or drag the slider. Tap the middle to hide or show the bars.

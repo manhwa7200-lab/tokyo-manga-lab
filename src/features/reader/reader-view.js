@@ -2,6 +2,7 @@ import { escapeHtml } from '../../shared/utils.js';
 import { icon } from '../../shared/icons.js';
 import { buildPageUrls, clampPage, isChapterId, pagesExpired, pickQuality, shouldReport } from './reader-pages.js';
 import { sendReport } from './reader-report.js';
+import { describeFailure, fetchImageNative, shortDetails } from './reader-native.js';
 import { loadChapterProgress, recordReadingSession, saveChapterProgress } from './reader-progress.js';
 
 const MODES = ['scroll', 'rtl', 'ltr'];
@@ -50,6 +51,8 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   };
   const controller = new AbortController();
   const started = new Map(); // index -> { start, url, retried }
+  const blobUrls = new Map(); // index -> object URL for pages loaded through the app's own network layer
+  const failures = new Map(); // index -> last failure result, shown to the reader
 
   const sourceUrl = isChapterId(chapterId) ? `https://mangadex.org/chapter/${encodeURIComponent(chapterId)}` : '';
 
@@ -102,6 +105,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     const index = Number(img.dataset.index);
     if (!Number.isFinite(index) || img.dataset.state === 'loading' || img.dataset.state === 'done') return;
     img.dataset.state = 'loading';
+    if (blobUrls.has(index)) { img.src = blobUrls.get(index); return; }
     const url = await urlFor(index);
     if (view.destroyed || !url) return;
     started.set(index, { start: performance.now(), url, retried: started.get(index)?.retried || false });
@@ -117,16 +121,37 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     }
   }
 
+  // Shows a page that the WebView would not load, using the app's own network layer.
+  async function recoverWithNativeFetch(img, index, url) {
+    const result = await fetchImageNative(url);
+    if (result.ok) {
+      const objectUrl = URL.createObjectURL(result.blob);
+      blobUrls.set(index, objectUrl);
+      if (shouldReport(url)) sendReport({ url, success: true, cached: result.cached, bytes: result.bytes, duration: result.duration });
+      if (!view.destroyed) { img.dataset.native = '1'; img.dataset.state = 'loading'; img.src = objectUrl; }
+    }
+    return result;
+  }
+
   async function onImageError(img) {
     const index = Number(img.dataset.index);
+    if (img.dataset.native === '1') { // the app-network copy would not decode either
+      img.dataset.state = 'failed';
+      showFailure(img, index, { ok: false, available: true, status: 0, error: 'not-image' });
+      return;
+    }
     const info = started.get(index);
     if (info && shouldReport(info.url)) sendReport({ url: info.url, success: false, bytes: 0, duration: performance.now() - info.start });
-    if (view.destroyed) return;
-    if (info && !info.retried) {
+    if (view.destroyed || !info) return;
+    // First, ask the app's network layer for the same address. If that works the WebView was the problem.
+    const result = await recoverWithNativeFetch(img, index, info.url);
+    if (result.ok || view.destroyed) return;
+    failures.set(index, result);
+    // Otherwise the address may have expired: get fresh ones once and try again.
+    if (!info.retried) {
       info.retried = true;
       const refreshed = await refreshPages();
       if (refreshed && !view.destroyed && view.urls[index]) {
-        img.dataset.state = '';
         started.set(index, { start: performance.now(), url: view.urls[index], retried: true });
         img.dataset.state = 'loading';
         img.src = view.urls[index];
@@ -134,10 +159,16 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       }
     }
     img.dataset.state = 'failed';
+    showFailure(img, index, result);
+  }
+
+  function hostOf(url) { try { return new URL(url).host; } catch { return ''; } }
+
+  function showFailure(img, index, result) {
     const holder = img.closest('.reader-slot');
-    if (holder && !holder.querySelector('.reader-retry')) {
-      holder.insertAdjacentHTML('beforeend', `<button class="button reader-retry" data-reader="retry-image" data-index="${index}">Page ${index + 1} failed to load. Tap to retry</button>`);
-    }
+    if (!holder || holder.querySelector('.reader-retry')) return;
+    const host = hostOf(started.get(index)?.url || view.urls[index]);
+    holder.insertAdjacentHTML('beforeend', `<div class="reader-retry"><p>${escapeHtml(describeFailure(result, host))}</p><small>${escapeHtml(shortDetails(result))}</small><button class="button" data-reader="retry-image" data-index="${index}">Retry page ${index + 1}</button></div>`);
   }
 
   function bindImage(img) {
@@ -149,6 +180,9 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     const img = host.querySelector(`.reader-img[data-index="${index}"]`);
     if (!img) return;
     img.closest('.reader-slot')?.querySelector('.reader-retry')?.remove();
+    img.dataset.native = '';
+    failures.delete(index);
+    if (blobUrls.has(index)) { URL.revokeObjectURL(blobUrls.get(index)); blobUrls.delete(index); }
     const info = started.get(index) || { retried: false };
     started.set(index, { ...info, retried: false });
     await refreshPages({ manual: true });
@@ -293,6 +327,8 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     view.quality = nextQuality;
     view.urls = buildPageUrls(view.pages, nextQuality);
     started.clear();
+    for (const objectUrl of blobUrls.values()) URL.revokeObjectURL(objectUrl);
+    blobUrls.clear();
     onSetting?.('readerQuality', nextQuality);
     render();
   }
@@ -388,6 +424,8 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       view.destroyed = true;
       controller.abort();
       teardownObservers();
+      for (const objectUrl of blobUrls.values()) URL.revokeObjectURL(objectUrl);
+      blobUrls.clear();
       window.clearInterval(timer);
       window.clearTimeout(view.saveTimer);
       host.removeEventListener('click', handleClick);
