@@ -1,3 +1,5 @@
+import { isNativeApp } from '../features/anilist/anilist-native.js';
+
 export const API_BASE_URL = 'https://tokyo-manga-lab-api2.haribp720.workers.dev';
 const REQUEST_TIMEOUT_MS = 12000;
 
@@ -11,8 +13,15 @@ export class ApiError extends Error {
   }
 }
 
+// Adult ratings are requested only from the Android app and only while the preference is on.
+// The public web build can never ask for them, and the Worker refuses browser origins as well.
+let adultAllowed = false;
+export function configureAdult(enabled) { adultAllowed = Boolean(enabled) && isNativeApp(); }
+export const adultActive = () => adultAllowed;
+
 async function getJson(path, params = {}, { signal } = {}) {
   const url = new URL(path.replace(/^\//, ''), `${API_BASE_URL}/`);
+  if (adultAllowed && !path.includes('health') && !path.includes('sources')) url.searchParams.set('adult', '1');
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && String(value).length) url.searchParams.set(key, String(value));
   }
@@ -35,7 +44,7 @@ async function getJson(path, params = {}, { signal } = {}) {
         : response.status >= 500
           ? 'The manga catalogue is temporarily unavailable. Try again shortly.'
           : (typeof payload?.error === 'string' ? payload.error : payload?.error?.message || `Request failed with HTTP ${response.status}.`);
-      throw new ApiError(message, { status: response.status, code });
+      throw new ApiError(message, { status: response.status, code: typeof payload?.error?.code === 'string' ? payload.error.code : code });
     }
     return payload;
   } catch (error) {
@@ -54,5 +63,6 @@ export const apiClient = {
   mangaSearch: ({ query = '', page = 1, signal } = {}) => getJson('manga', { q: String(query).trim().slice(0, 100), page: Math.max(1, Math.min(20, Number(page) || 1)) }, { signal }),
   mangaDetails: (externalId, { signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}`, {}, { signal }),
   mangaChapters: (externalId, { page = 1, language = 'en', signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}/chapters`, { page: Math.max(1, Math.min(1000, Number(page) || 1)), language }, { signal }),
+  chapterPages: (chapterId, { signal } = {}) => getJson(`api/v1/chapters/${encodeURIComponent(String(chapterId || ''))}/pages`, {}, { signal }),
   sources: ({ signal } = {}) => getJson('api/v1/sources', {}, { signal })
 };

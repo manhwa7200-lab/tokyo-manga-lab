@@ -59,13 +59,13 @@ test('legacy /health route remains available', async () => {
   assert.ok(body.contentRatings.includes('safe'));
 });
 
-test('source registry exposes metadata-only capabilities', async () => {
+test('source registry exposes search, chapters and reader capabilities', async () => {
   const response = await worker.fetch(apiRequest('/api/v1/sources'));
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.data[0].id, 'mangadex');
   assert.equal(body.data[0].capabilities.titleDetails, true);
-  assert.equal(body.data[0].capabilities.chapterContent, false);
+  assert.equal(body.data[0].capabilities.chapterContent, true);
   assert.equal(body.data[0].capabilities.offlineDownloads, false);
 });
 
@@ -176,4 +176,155 @@ test('search results pass on exact AniList and MyAnimeList ids when MangaDex has
   assert.equal(body.data[0].malId, '13');
   assert.equal(body.data[1].anilistId, null, 'non-numeric link values are dropped');
   assert.equal(body.data[1].malId, null);
+});
+
+// ---- chapter pages -------------------------------------------------------------------
+function chapterWithManga(rating = 'safe', extra = {}) {
+  return {
+    data: {
+      id: CHAPTER_ID,
+      attributes: { chapter: '1', translatedLanguage: 'en', pages: 2, ...extra },
+      relationships: [{ id: MANGA_ID, type: 'manga', attributes: { contentRating: rating } }]
+    }
+  };
+}
+
+function atHomeBody(overrides = {}) {
+  return {
+    baseUrl: 'https://node.example.network',
+    chapter: { hash: 'abc123def456', data: ['1-aaa.png', '2-bbb.png'], dataSaver: ['1-aaa.jpg', '2-bbb.jpg'] },
+    ...overrides
+  };
+}
+
+test('pages endpoint returns URL parts only, uncached, from the two fixed upstream paths', async t => {
+  const seen = [];
+  mockFetch(t, url => {
+    seen.push(url.pathname);
+    if (url.pathname === `/chapter/${CHAPTER_ID}`) return jsonResponse(chapterWithManga());
+    if (url.pathname === `/at-home/server/${CHAPTER_ID}`) return jsonResponse(atHomeBody());
+    return jsonResponse({}, 404);
+  });
+  const response = await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.deepEqual(seen, [`/chapter/${CHAPTER_ID}`, `/at-home/server/${CHAPTER_ID}`]);
+  assert.equal(body.data.baseUrl, 'https://node.example.network');
+  assert.equal(body.data.hash, 'abc123def456');
+  assert.deepEqual(body.data.data, ['1-aaa.png', '2-bbb.png']);
+  assert.equal(body.data.mangaExternalId, MANGA_ID);
+});
+
+test('pages endpoint rejects bad ids without calling upstream', async t => {
+  let called = false;
+  mockFetch(t, () => { called = true; return jsonResponse({}); });
+  const response = await worker.fetch(apiRequest('/api/v1/chapters/not-a-uuid/pages'));
+  assert.equal(response.status, 400);
+  assert.equal(called, false);
+});
+
+test('pages endpoint fails closed for adult titles and unreadable ratings', async t => {
+  for (const rating of ['erotica', 'pornographic', null]) {
+    mockFetch(t, url => url.pathname.startsWith('/at-home')
+      ? jsonResponse(atHomeBody())
+      : jsonResponse(chapterWithManga(rating)));
+    const response = await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`));
+    assert.equal(response.status, 404, `rating ${rating}`);
+  }
+});
+
+test('pages endpoint sends externally hosted chapters back to the source link', async t => {
+  mockFetch(t, () => jsonResponse(chapterWithManga('safe', { externalUrl: 'https://example.com/read' })));
+  const response = await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`));
+  const body = await response.json();
+  assert.equal(response.status, 422);
+  assert.equal(body.error.code, 'CHAPTER_EXTERNAL');
+});
+
+test('pages endpoint drops unsafe filenames and rejects non-https node URLs', async t => {
+  mockFetch(t, url => url.pathname.startsWith('/at-home')
+    ? jsonResponse(atHomeBody({ chapter: { hash: 'abc123def456', data: ['ok.png', '../evil', 'a/b.png'], dataSaver: [] } }))
+    : jsonResponse(chapterWithManga()));
+  const ok = await (await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`))).json();
+  assert.deepEqual(ok.data.data, ['ok.png']);
+
+  mockFetch(t, url => url.pathname.startsWith('/at-home')
+    ? jsonResponse(atHomeBody({ baseUrl: 'http://insecure.example' }))
+    : jsonResponse(chapterWithManga()));
+  const bad = await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`));
+  assert.equal(bad.status, 502);
+});
+
+test('pages endpoint maps upstream 429 and enforces the origin allowlist', async t => {
+  mockFetch(t, () => jsonResponse({}, 429));
+  const limited = await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`));
+  assert.equal(limited.status, 429);
+  const blocked = await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`, { origin: 'https://evil.example' }));
+  assert.equal(blocked.status, 403);
+});
+
+// ---- adult ratings gate --------------------------------------------------------------
+const LOLI_TAG = { id: '2d1f5d56-a1e5-4d0d-a961-2193588b08ec', attributes: { name: { en: 'Loli' } } };
+
+function mangaPayload(rating, tags = []) {
+  const m = sampleManga(rating);
+  m.attributes.tags = [...m.attributes.tags, ...tags];
+  return { data: m };
+}
+
+test('adult ratings are never served to browser origins, even with adult=1', async t => {
+  mockFetch(t, () => jsonResponse(mangaPayload('erotica')));
+  const response = await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}?adult=1`));
+  assert.equal(response.status, 404);
+});
+
+test('adult ratings need both no browser origin and adult=1', async t => {
+  mockFetch(t, () => jsonResponse(mangaPayload('pornographic')));
+  const withoutFlag = await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}`, { origin: '' }));
+  assert.equal(withoutFlag.status, 404);
+  const allowed = await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}?adult=1`, { origin: '' }));
+  assert.equal(allowed.status, 200);
+  assert.equal((await allowed.json()).data.contentRating, 'pornographic');
+});
+
+test('sexualised-minor tags are blocked in every mode', async t => {
+  mockFetch(t, () => jsonResponse(mangaPayload('safe', [LOLI_TAG])));
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}`))).status, 404);
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}?adult=1`, { origin: '' }))).status, 404);
+  // Name-based check still applies if the id ever changes upstream.
+  mockFetch(t, () => jsonResponse(mangaPayload('erotica', [{ id: 'other-id', attributes: { name: { en: 'Shota' } } }])));
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}?adult=1`, { origin: '' }))).status, 404);
+});
+
+test('search asks upstream for adult ratings only in the gated case, and always excludes blocked tags', async t => {
+  const seen = [];
+  mockFetch(t, url => { seen.push(url); return jsonResponse({ data: [sampleManga('pornographic')], total: 1 }); });
+  const browser = await (await worker.fetch(apiRequest('/api/v1/search?query=x&adult=1'))).json();
+  assert.equal(browser.data.length, 0);
+  assert.ok(!seen[0].searchParams.getAll('contentRating[]').includes('pornographic'));
+  const app = await (await worker.fetch(apiRequest('/api/v1/search?query=x&adult=1', { origin: '' }))).json();
+  assert.equal(app.data.length, 1);
+  assert.ok(seen[1].searchParams.getAll('contentRating[]').includes('pornographic'));
+  for (const url of seen) {
+    assert.ok(url.searchParams.getAll('excludedTags[]').includes(LOLI_TAG.id));
+    assert.equal(url.searchParams.get('excludedTagsMode'), 'OR');
+  }
+});
+
+test('legacy /manga route follows the same gate', async t => {
+  mockFetch(t, () => jsonResponse({ data: [sampleManga('erotica')], total: 1 }));
+  assert.equal((await (await worker.fetch(apiRequest('/manga?q=x&adult=1'))).json()).data.length, 0);
+  assert.equal((await (await worker.fetch(apiRequest('/manga?q=x&adult=1', { origin: '' }))).json()).data.length, 1);
+});
+
+test('chapter pages follow the gate and the blocked-tag rule', async t => {
+  const withParent = (rating, tags = []) => ({
+    data: { id: CHAPTER_ID, attributes: { chapter: '1', pages: 2 }, relationships: [{ id: MANGA_ID, type: 'manga', attributes: { contentRating: rating, tags } }] }
+  });
+  mockFetch(t, url => url.pathname.startsWith('/at-home') ? jsonResponse(atHomeBody()) : jsonResponse(withParent('erotica')));
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages?adult=1`))).status, 404);
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages?adult=1`, { origin: '' }))).status, 200);
+  mockFetch(t, url => url.pathname.startsWith('/at-home') ? jsonResponse(atHomeBody()) : jsonResponse(withParent('erotica', [LOLI_TAG])));
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages?adult=1`, { origin: '' }))).status, 404);
 });

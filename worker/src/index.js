@@ -10,6 +10,26 @@ const PAGE_SIZE = 24;
 const MAX_SEARCH_PAGE = 20;
 const MAX_CHAPTER_PAGE = 1000;
 const SAFE_RATINGS = ["safe", "suggestive"];
+const ADULT_RATINGS = ["erotica", "pornographic"];
+// Sexualised-minor tags are never served in any mode. Checked by id (request filter) and by name (response filter, fail closed).
+const BLOCKED_TAG_IDS = ["2d1f5d56-a1e5-4d0d-a961-2193588b08ec", "ddefd648-5140-4e5f-ba18-4eca4071d19b"];
+const BLOCKED_TAG_NAMES = new Set(["loli", "shota"]);
+
+// Adult ratings are only ever returned to non-browser clients (the Android app sends no Origin header) that
+// ask for them with adult=1. This keeps the public GitHub Pages demo neutral. It is a product policy,
+// not authentication or age verification: CORS and the Origin header are not security boundaries.
+function adultRequested(url, origin) {
+  return !origin && url.searchParams.get("adult") === "1";
+}
+
+function allowedRatings(allowAdult) {
+  return allowAdult ? [...SAFE_RATINGS, ...ADULT_RATINGS] : SAFE_RATINGS;
+}
+
+function hasBlockedTag(item) {
+  return (item?.attributes?.tags || []).some(tag =>
+    BLOCKED_TAG_IDS.includes(tag?.id) || Object.values(tag?.attributes?.name || {}).some(name => BLOCKED_TAG_NAMES.has(String(name).trim().toLowerCase())));
+}
 
 function isAllowedOrigin(origin) {
   return !origin || ALLOWED_DEV_ORIGINS.has(origin);
@@ -122,8 +142,8 @@ function normalizePublicationStatus(value) {
   return 'unknown';
 }
 
-function isAllowedContent(item) {
-  return SAFE_RATINGS.includes(item?.attributes?.contentRating);
+function isAllowedContent(item, allowAdult = false) {
+  return allowedRatings(allowAdult).includes(item?.attributes?.contentRating) && !hasBlockedTag(item);
 }
 
 function parsePage(value, max = MAX_SEARCH_PAGE) {
@@ -135,7 +155,7 @@ function validMangaId(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
-async function fetchMangaDex(path, params = {}) {
+async function fetchMangaDex(path, params = {}, { cache = true } = {}) {
   const url = new URL(API_BASE + path);
   for (const [key, value] of params) url.searchParams.append(key, String(value));
   const controller = new AbortController();
@@ -147,7 +167,7 @@ async function fetchMangaDex(path, params = {}) {
         "User-Agent": "TokyoMangaLab/0.4.0 (catalogue metadata connector)"
       },
       signal: controller.signal,
-      cf: { cacheTtl: 120, cacheEverything: true }
+      cf: cache ? { cacheTtl: 120, cacheEverything: true } : { cacheTtl: 0, cacheEverything: false }
     });
     if (!response.ok) {
       const err = new Error(`MangaDex returned HTTP ${response.status}.`);
@@ -160,24 +180,30 @@ async function fetchMangaDex(path, params = {}) {
   }
 }
 
-function mangaSearchParams(query, page) {
+function ratingParams(allowAdult) {
+  const params = allowedRatings(allowAdult).map(rating => ["contentRating[]", rating]);
+  for (const id of BLOCKED_TAG_IDS) params.push(["excludedTags[]", id]);
+  params.push(["excludedTagsMode", "OR"]);
+  return params;
+}
+
+function mangaSearchParams(query, page, allowAdult = false) {
   const params = [
     ["limit", PAGE_SIZE],
     ["offset", (page - 1) * PAGE_SIZE],
     ["includes[]", "cover_art"],
     ["includes[]", "author"],
     ["includes[]", "artist"],
-    ["contentRating[]", "safe"],
-    ["contentRating[]", "suggestive"]
+    ...ratingParams(allowAdult)
   ];
   if (query) params.push(["title", query], ["order[relevance]", "desc"]);
   else params.push(["order[latestUploadedAt]", "desc"]);
   return params;
 }
 
-async function doMangaSearch(query, page) {
-  const payload = await fetchMangaDex("/manga", mangaSearchParams(query, page));
-  const items = (payload.data || []).filter(isAllowedContent).map(normalizeManga);
+async function doMangaSearch(query, page, allowAdult = false) {
+  const payload = await fetchMangaDex("/manga", mangaSearchParams(query, page, allowAdult));
+  const items = (payload.data || []).filter(item => isAllowedContent(item, allowAdult)).map(normalizeManga);
   const total = Math.max(0, Number(payload.total) || items.length);
   return {
     items,
@@ -190,13 +216,13 @@ async function doMangaSearch(query, page) {
   };
 }
 
-async function doMangaDetails(id) {
+async function doMangaDetails(id, allowAdult = false) {
   const payload = await fetchMangaDex(`/manga/${encodeURIComponent(id)}`, [
     ["includes[]", "cover_art"], ["includes[]", "author"], ["includes[]", "artist"]
   ]);
   const item = payload.data;
   if (!item || item.id !== id) return { kind: "missing" };
-  if (!isAllowedContent(item)) return { kind: "filtered" };
+  if (!isAllowedContent(item, allowAdult)) return { kind: "filtered" };
   return { kind: "ok", item: normalizeManga(item) };
 }
 
@@ -221,15 +247,14 @@ function normalizeChapter(chapter, mangaId) {
   };
 }
 
-async function doChapterList(id, page, language) {
-  const title = await doMangaDetails(id);
+async function doChapterList(id, page, language, allowAdult = false) {
+  const title = await doMangaDetails(id, allowAdult);
   if (title.kind !== "ok") return title;
   const params = [
     ["limit", PAGE_SIZE],
     ["offset", (page - 1) * PAGE_SIZE],
     ["order[chapter]", "desc"],
-    ["contentRating[]", "safe"],
-    ["contentRating[]", "suggestive"],
+    ...allowedRatings(allowAdult).map(rating => ["contentRating[]", rating]),
     ["includes[]", "scanlation_group"]
   ];
   if (language !== "all") params.push(["translatedLanguage[]", language]);
@@ -245,11 +270,12 @@ async function doChapterList(id, page, language) {
 }
 
 async function handleLegacyManga(url, origin) {
+  const allowAdult = adultRequested(url, origin);
   const title = (url.searchParams.get("q") || "").trim().slice(0, MAX_QUERY_LENGTH);
   const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
   try {
-    const payload = await fetchMangaDex("/manga", mangaSearchParams(title, page));
-    const data = (payload.data || []).filter(isAllowedContent).map(item => {
+    const payload = await fetchMangaDex("/manga", mangaSearchParams(title, page, allowAdult));
+    const data = (payload.data || []).filter(item => isAllowedContent(item, allowAdult)).map(item => {
       const normalized = normalizeManga(item);
       return {
         id: normalized.externalId,
@@ -286,7 +312,7 @@ async function handleV1Search(url, origin) {
   const query = (url.searchParams.get("query") || "").trim().slice(0, MAX_QUERY_LENGTH);
   const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
   try {
-    const result = await doMangaSearch(query, page);
+    const result = await doMangaSearch(query, page, adultRequested(url, origin));
     return json({
       data: result.items,
       pagination: result.pagination,
@@ -298,10 +324,10 @@ async function handleV1Search(url, origin) {
   }
 }
 
-async function handleV1Details(id, origin) {
+async function handleV1Details(id, origin, allowAdult = false) {
   if (!validMangaId(id)) return apiError("INVALID_MANGA_ID", "The manga ID is not a valid MangaDex UUID.", origin, 400);
   try {
-    const result = await doMangaDetails(id);
+    const result = await doMangaDetails(id, allowAdult);
     if (result.kind === "missing" || result.kind === "filtered") return apiError("TITLE_UNAVAILABLE", "This title is unavailable in the current catalogue mode.", origin, 404);
     return json({ data: result.item, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex" } }, 200, origin);
   } catch (error) {
@@ -318,7 +344,7 @@ async function handleV1Chapters(id, url, origin) {
   const language = (url.searchParams.get("language") || "en").toLowerCase();
   if (language !== "all" && !/^[a-z]{2,3}$/.test(language)) return apiError("INVALID_LANGUAGE", "Use a two- or three-letter language code, or 'all'.", origin, 400);
   try {
-    const result = await doChapterList(id, page, language);
+    const result = await doChapterList(id, page, language, adultRequested(url, origin));
     if (result.kind === "missing" || result.kind === "filtered") return apiError("TITLE_UNAVAILABLE", "This title is unavailable in the current catalogue mode.", origin, 404);
     return json({ data: result.data, pagination: result.pagination, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex", language } }, 200, origin);
   } catch (error) {
@@ -326,6 +352,67 @@ async function handleV1Chapters(id, url, origin) {
     const code = status === 429 ? "RATE_LIMITED" : status === 404 ? "TITLE_UNAVAILABLE" : "UPSTREAM_UNAVAILABLE";
     const message = status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : status === 404 ? "This title was not found in the current catalogue." : "Could not load chapter metadata right now.";
     return apiError(code, message, origin, status);
+  }
+}
+
+// ---- Chapter pages (MangaDex at-home) -------------------------------------------------
+// Returns only what the reader needs to build image URLs. The Worker never fetches or relays image bytes,
+// and the only upstream paths it can call are the two fixed ones below, so this is not a general proxy.
+const PAGE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/;
+const CHAPTER_HASH = /^[A-Za-z0-9]{8,64}$/;
+
+function usableBaseUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" && !url.username && !url.password ? url.origin + url.pathname.replace(/\/$/, "") : null;
+  } catch { return null; }
+}
+
+async function doChapterPages(id, allowAdult = false) {
+  const meta = await fetchMangaDex(`/chapter/${encodeURIComponent(id)}`, [["includes[]", "manga"]], { cache: true });
+  const chapter = meta.data;
+  if (!chapter || chapter.id !== id) return { kind: "missing" };
+  const parent = getRelations(chapter).find(rel => rel.type === "manga");
+  // Fail closed: if the parent title's rating cannot be read, do not serve pages.
+  if (!parent || !isAllowedContent(parent, allowAdult)) return { kind: "filtered" };
+  if (chapter.attributes?.externalUrl) return { kind: "external" };
+  const home = await fetchMangaDex(`/at-home/server/${encodeURIComponent(id)}`, [], { cache: false });
+  const baseUrl = usableBaseUrl(home.baseUrl);
+  const hash = home.chapter?.hash;
+  const clean = list => (Array.isArray(list) ? list : []).filter(name => typeof name === "string" && PAGE_FILENAME.test(name));
+  const data = clean(home.chapter?.data);
+  const dataSaver = clean(home.chapter?.dataSaver);
+  if (!baseUrl || typeof hash !== "string" || !CHAPTER_HASH.test(hash) || (!data.length && !dataSaver.length)) return { kind: "invalid" };
+  return {
+    kind: "ok",
+    pages: {
+      chapterId: id,
+      mangaExternalId: parent.id,
+      baseUrl,
+      hash,
+      data,
+      dataSaver,
+      issuedAt: new Date().toISOString(),
+      validForSeconds: 900
+    }
+  };
+}
+
+async function handleV1Pages(id, origin, allowAdult = false) {
+  if (!validMangaId(id)) return apiError("INVALID_CHAPTER_ID", "The chapter ID is not a valid MangaDex UUID.", origin, 400, { "Cache-Control": "no-store" });
+  const noStore = { "Cache-Control": "no-store" };
+  try {
+    const result = await doChapterPages(id, allowAdult);
+    if (result.kind === "missing") return apiError("CHAPTER_UNAVAILABLE", "This chapter was not found.", origin, 404, noStore);
+    if (result.kind === "filtered") return apiError("CHAPTER_UNAVAILABLE", "This chapter is unavailable in the current catalogue mode.", origin, 404, noStore);
+    if (result.kind === "external") return apiError("CHAPTER_EXTERNAL", "This chapter is hosted on another site. Open it from the source link.", origin, 422, noStore);
+    if (result.kind === "invalid") return apiError("UPSTREAM_UNAVAILABLE", "MangaDex returned an unusable page list.", origin, 502, noStore);
+    return json({ data: result.pages, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex" } }, 200, origin, noStore);
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : error?.status === 404 ? 404 : 502;
+    const code = status === 429 ? "RATE_LIMITED" : status === 404 ? "CHAPTER_UNAVAILABLE" : "UPSTREAM_UNAVAILABLE";
+    const message = status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : status === 404 ? "This chapter was not found." : "Could not load chapter pages right now.";
+    return apiError(code, message, origin, status, noStore);
   }
 }
 
@@ -349,11 +436,17 @@ export default {
     if (url.pathname === "/api/v1/sources") {
       return json({ data: [{
         id: "mangadex", label: "MangaDex", contentTypes: ["manga"],
-        capabilities: { search: true, titleDetails: true, chapters: true, chapterContent: false, offlineDownloads: false }
+        capabilities: { search: true, titleDetails: true, chapters: true, chapterContent: true, offlineDownloads: false }
       }], meta: { apiVersion: "1", requestId: requestId() } }, 200, origin);
     }
     if (url.pathname === "/api/v1/search") return handleV1Search(url, origin);
 
+    const pagesMatch = url.pathname.match(/^\/api\/v1\/chapters\/([^/]+)\/pages$/);
+    if (pagesMatch) {
+      let id;
+      try { id = decodeURIComponent(pagesMatch[1]); } catch { return apiError("INVALID_CHAPTER_ID", "The chapter ID is invalid.", origin, 400); }
+      return handleV1Pages(id, origin, adultRequested(url, origin));
+    }
     const chaptersMatch = url.pathname.match(/^\/api\/v1\/manga\/([^/]+)\/chapters$/);
     if (chaptersMatch) {
       let id;
@@ -364,7 +457,7 @@ export default {
     if (detailsMatch) {
       let id;
       try { id = decodeURIComponent(detailsMatch[1]); } catch { return apiError("INVALID_MANGA_ID", "The manga ID is invalid.", origin, 400); }
-      return handleV1Details(id, origin);
+      return handleV1Details(id, origin, adultRequested(url, origin));
     }
     if (url.pathname.startsWith("/api/v1/")) return apiError("NOT_FOUND", "API route not found.", origin, 404);
     return json({ error: "Not found. Use /health, /manga or the documented /api/v1 routes." }, 404, origin);

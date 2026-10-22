@@ -1,11 +1,11 @@
-const CACHE_NAME = 'tokyo-manga-lab-shell-v4';
+const CACHE_NAME = 'tokyo-manga-lab-shell-v5';
 const APP_SHELL = [
   './', './index.html', './manifest.webmanifest', './assets/favicon.svg',
   './css/base.css', './css/theme.css', './css/layout.css', './css/components.css', './css/screens.css', './css/reader.css',
   './src/app.js', './src/core/app-controller.js', './src/core/router.js',
   './src/data/database.js', './src/data/models.js', './src/data/repositories/library-repository.js',
   './src/services/api-client.js', './src/sources/source-registry.js', './src/sources/manga/mangadex-adapter.js',
-  './src/features/anilist/anilist-config.js', './src/features/anilist/anilist-mapper.js', './src/features/anilist/anilist-auth.js', './src/features/anilist/anilist-client.js', './src/features/anilist/sync-planner.js', './src/features/anilist/anilist-store.js', './src/features/anilist/anilist-sync.js', './src/features/anilist/anilist-native.js', './src/features/settings/settings-service.js', './src/features/settings/settings-schema.js', './src/features/profile/profile-sections.js', './src/features/feature-registry.js', './src/shared/icons.js', './src/shared/app-info.js', './src/features/settings/legacy-migration.js', './src/features/statistics/statistics-service.js', './src/shared/utils.js'
+  './src/features/anilist/anilist-config.js', './src/features/anilist/anilist-mapper.js', './src/features/anilist/anilist-auth.js', './src/features/anilist/anilist-client.js', './src/features/anilist/sync-planner.js', './src/features/anilist/anilist-store.js', './src/features/anilist/anilist-sync.js', './src/features/anilist/anilist-native.js', './src/features/reader/reader-pages.js', './src/features/reader/reader-report.js', './src/features/reader/reader-progress.js', './src/features/reader/reader-view.js', './src/features/settings/settings-service.js', './src/features/settings/settings-schema.js', './src/features/profile/profile-sections.js', './src/features/feature-registry.js', './src/shared/icons.js', './src/shared/app-info.js', './src/features/settings/legacy-migration.js', './src/features/statistics/statistics-service.js', './src/shared/utils.js'
 ];
 
 self.addEventListener('install', event => {

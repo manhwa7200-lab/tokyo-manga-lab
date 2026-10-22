@@ -1,5 +1,5 @@
 // Routes look like  #library  or  #settings/appearance  (route + optional sub-page).
-const ALLOWED_ROUTES = new Set(['home', 'discover', 'library', 'downloads', 'profile', 'settings']);
+const ALLOWED_ROUTES = new Set(['home', 'discover', 'library', 'downloads', 'profile', 'settings', 'read']);
 
 export function parseRoute(hash) {
   const [path] = String(hash || '#home').replace(/^#/, '').split('?');
@@ -22,7 +22,7 @@ export function bindNavigation(onNavigate) {
 }
 
 // Settings lives inside Profile, so the Profile tab stays lit while you are in Settings.
-const PARENT_TAB = { settings: 'profile' };
+const PARENT_TAB = { settings: 'profile', read: 'library' };
 
 export function updateNavigation(route) {
   const tab = PARENT_TAB[route] || route;
