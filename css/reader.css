@@ -1,4 +1,42 @@
-/* Reserved for the manga reader and the Novel Reading Beta. The current build does not fetch chapter pages. */
-.reader-page { max-width: 900px; margin: 0 auto; }
-.reader-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-radius: var(--radius-m); background: var(--surface); }
-.reader-placeholder { margin-top: 16px; padding: 30px; border-radius: var(--radius-l); background: var(--surface); text-align: center; color: var(--muted); }
+/* Manga reader. Shown full-screen while the route is #read/<chapter>; the app chrome is hidden. */
+body[data-route="read"] .topbar,
+body[data-route="read"] .desktop-nav,
+body[data-route="read"] .mobile-nav { display: none; }
+body[data-route="read"] .app-shell { padding: 0; max-width: none; }
+body[data-route="read"] .app-view { padding: 0; max-width: none; }
+
+.reader { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #050409; color: #f3f0fa; }
+.reader-bar, .reader-foot { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 10px var(--gutter); background: #0d0b16ee; backdrop-filter: blur(10px); }
+.reader-bar { padding-top: calc(10px + env(safe-area-inset-top)); }
+.reader-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+.reader-bar[hidden], .reader-foot[hidden] { display: none; }
+.reader-title { flex: 1; min-width: 0; display: grid; }
+.reader-title strong, .reader-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reader-title small { color: #b9b2cf; font-size: .72rem; }
+.reader-chip { min-height: 34px; padding: 0 12px; font-size: .74rem; white-space: nowrap; }
+.reader-slider { flex: 1; display: grid; gap: 2px; text-align: center; font-size: .72rem; color: #b9b2cf; }
+.reader-slider input { width: 100%; accent-color: var(--accent, #e879b9); }
+
+.reader-stage { flex: 1; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; outline: none; display: flex; flex-direction: column; align-items: center; }
+.reader-stage[data-mode="scroll"] { justify-content: flex-start; }
+.reader-stage:not([data-mode="scroll"]) { justify-content: center; }
+.reader-slot { width: 100%; display: flex; justify-content: center; position: relative; min-height: 40vh; }
+.reader-stage[data-mode="scroll"] .reader-slot { min-height: 60vh; }
+.reader-img { display: block; max-width: 100%; height: auto; margin: 0 auto; background: #0d0b16; user-select: none; }
+.reader-img:not([src]) { min-height: 60vh; width: 100%; }
+.reader-stage[data-fit="width"]:not([data-mode="scroll"]) .reader-img { width: 100%; max-width: 900px; height: auto; }
+.reader-stage[data-fit="height"]:not([data-mode="scroll"]) .reader-img { width: auto; height: 100%; max-height: 100%; }
+.reader-stage[data-fit="height"]:not([data-mode="scroll"]) .reader-slot { height: 100%; }
+.reader-stage[data-mode="scroll"] .reader-img { width: 100%; max-width: 900px; }
+.reader-retry { position: absolute; inset: auto 16px 16px; }
+
+.reader-status, .reader-end { margin: auto; max-width: 420px; padding: 28px var(--gutter); display: grid; gap: 12px; justify-items: center; text-align: center; color: #d6d0e6; }
+.reader-status h2, .reader-end h3 { margin: 0; color: #fff; }
+.reader-status-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.reader-end { padding: 48px var(--gutter); }
+.reader-credit { margin: 0; padding: 18px var(--gutter) 40px; max-width: 640px; text-align: center; font-size: .72rem; color: #8f88a8; }
+.reader-credit a { color: inherit; }
+.reader-toast { position: absolute; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: #000c; color: #fff; font-size: .78rem; pointer-events: none; }
+.chapter-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.chapter-read { min-height: 34px; padding: 0 16px; font-size: .78rem; }
+@media (prefers-reduced-motion: reduce) { .reader * { scroll-behavior: auto !important; transition: none !important; } }

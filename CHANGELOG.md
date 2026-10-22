@@ -28,3 +28,13 @@
 - Local database upgraded to version 2 (new `accountLinks` and `syncLinks` stores; existing data is kept).
 - Worker passes `anilistId` and `malId` through (not deployed by this change).
 - See docs/ANILIST.md.
+
+## 0.7.0 - Reader
+- In-app manga reader for MangaDex chapters: tap **Read** in a title's chapter list. Vertical scroll, right-to-left and left-to-right modes, page slider, tap zones and arrow keys, previous/next chapter, data-saver quality.
+- Resumes where you stopped and records finished chapters (`chapterProgress`) and reading sessions (`readingSessions`), so the statistics screen starts counting real reading. No database version change.
+- Pages load directly from MangaDex nodes; the app does not download, store or re-host them. Expired or failing addresses are refreshed automatically (rate-limited and capped), with a manual retry.
+- Sends MangaDex's requested image-load reports (URL, result and timing only; no account data).
+- Worker: new `GET /api/v1/chapters/{id}/pages` (not deployed by this change). The reader needs this Worker update; until it is deployed the Read screen explains that and links to MangaDex.
+- Adult MangaDex ratings (erotica, pornographic) are available only in the Android app, behind the off-by-default preference with a confirmation. The web demo never receives them. Loli/shota-tagged titles are blocked in every mode.
+- New settings: reading mode, page fit, image quality.
+- No third-party adult sites were added; see docs/ADULT-SOURCES.md.

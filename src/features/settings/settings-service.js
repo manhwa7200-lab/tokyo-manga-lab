@@ -9,6 +9,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   preferredLanguage: 'en',
   enableOnlineSearch: true,
   coverSize: 'comfortable',
+  readerMode: 'scroll',
+  readerFit: 'width',
+  readerQuality: 'data',
   anilistClientId: '',
   anilistPushEnabled: false
 });

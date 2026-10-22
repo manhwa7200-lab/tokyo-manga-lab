@@ -57,12 +57,13 @@ export const SETTINGS_CATEGORIES = Object.freeze([
     id: 'reading', title: 'Reading', icon: 'bookOpen', summary: 'Reader, progress and downloads',
     groups: [
       { id: 'reader', title: 'Reader', items: [
-        { type: 'planned', id: 'reading-direction', title: 'Reading direction', description: 'Right to left, left to right or vertical scroll.' },
-        { type: 'planned', id: 'page-fit', title: 'Page fit', description: 'Fit width, fit height or original size.' },
+        { type: 'select', key: 'readerMode', title: 'Reading mode', description: 'Vertical scroll suits webtoons. Right to left suits manga. You can also change it inside the reader.', options: [['scroll', 'Vertical scroll'], ['rtl', 'Right to left'], ['ltr', 'Left to right']] },
+        { type: 'select', key: 'readerFit', title: 'Page fit', description: 'Applies to the page-by-page modes.', options: [['width', 'Fit width'], ['height', 'Fit height']] },
+        { type: 'select', key: 'readerQuality', title: 'Image quality', description: 'Data saver uses smaller, compressed pages. Handy on mobile data.', options: [['data', 'Original quality'], ['data-saver', 'Data saver']] },
         { type: 'planned', id: 'keep-awake', title: 'Keep screen on', description: 'Stop the screen sleeping while you read.' }
       ] },
       { id: 'progress', title: 'Progress', items: [
-        { type: 'planned', id: 'auto-resume', title: 'Resume where you left off', description: 'Open a title at your last page.' },
+        { type: 'info', title: 'Resume where you left off', value: 'Automatic', description: 'The reader reopens a chapter at the page you stopped on. Finished chapters reopen at page one.' },
         { type: 'planned', id: 'reading-goals', title: 'Reading goals', description: 'Weekly goals and streaks.' }
       ] },
       { id: 'downloads', title: 'Downloads', items: [
@@ -78,8 +79,8 @@ export const SETTINGS_CATEGORIES = Object.freeze([
         { type: 'select', key: 'preferredLanguage', title: 'Chapter language', description: 'The language chapter lists open in. You can still change it per title.', options: CHAPTER_LANGUAGES }
       ] },
       { id: 'safety', title: 'Content safety', items: [
-        { type: 'toggle', key: 'adultContentEnabled', title: 'Adult-content preference', description: 'Off by default. This is a preference, not age verification, and no adult source is connected in this build.' },
-        { type: 'info', title: 'Catalogue ratings', value: 'Safe and suggestive', description: 'The catalogue connector only returns these ratings.' }
+        { type: 'toggle', key: 'adultContentEnabled', title: 'Adult-content preference', description: 'Off by default and only available in the Android app. This is a preference on this device, not age verification. It adds MangaDex titles rated erotica or pornographic.' },
+        { type: 'info', title: 'Catalogue ratings', valueFrom: 'ratings', description: 'Titles tagged loli or shota are never shown, whatever this setting says.' }
       ] }
     ]
   },
@@ -158,7 +159,7 @@ export function findCategory(id) {
 }
 
 export const SETTING_CONDITIONS = Object.freeze(['anilistConnected', 'anilistDisconnected']);
-export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync']);
+export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync', 'ratings']);
 
 export function allSettingKeys() {
   const keys = [];

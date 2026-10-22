@@ -43,7 +43,7 @@ export const mangaDexAdapter = Object.freeze({
   id: 'mangadex',
   label: 'MangaDex',
   contentTypes: ['manga'],
-  capabilities: { search: true, titleDetails: true, chapters: true, chapterContent: false, offlineDownloads: false },
+  capabilities: { search: true, titleDetails: true, chapters: true, chapterContent: true, offlineDownloads: false },
   async search(query = '', page = 1, { signal } = {}) {
     const payload = await apiClient.mangaSearch({ query, page, signal });
     if (!payload || !Array.isArray(payload.data)) throw new Error('MangaDex returned data in an unexpected format.');
@@ -57,6 +57,10 @@ export const mangaDexAdapter = Object.freeze({
     const payload = await apiClient.mangaDetails(externalId, { signal });
     if (!payload?.data || payload.data.sourceId !== 'mangadex') throw new Error('MangaDex returned invalid title details.');
     return normalizeManga(payload.data);
+  },
+  // Returns where the page images live (never the images themselves). They load straight from MangaDex.
+  async chapterPages(chapterExternalId, { signal } = {}) {
+    return apiClient.chapterPages(chapterExternalId, { signal });
   },
   async chapters(externalId, { page = 1, language = 'en', signal } = {}) {
     const payload = await apiClient.mangaChapters(externalId, { page, language, signal });
