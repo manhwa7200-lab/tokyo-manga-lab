@@ -60,7 +60,17 @@ export const SETTINGS_CATEGORIES = Object.freeze([
         { type: 'select', key: 'readerMode', title: 'Reading mode', description: 'Vertical scroll suits webtoons. Right to left suits manga. You can also change it inside the reader.', options: [['scroll', 'Vertical scroll'], ['rtl', 'Right to left'], ['ltr', 'Left to right']] },
         { type: 'select', key: 'readerFit', title: 'Page fit', description: 'Applies to the page-by-page modes.', options: [['width', 'Fit width'], ['height', 'Fit height']] },
         { type: 'select', key: 'readerQuality', title: 'Image quality', description: 'Data saver uses smaller, compressed pages. Handy on mobile data.', options: [['data', 'Original quality'], ['data-saver', 'Data saver']] },
+        { type: 'select', key: 'readerOrientation', title: 'Screen rotation', description: 'Lock the screen to portrait or landscape while reading. Android app only.', options: [['auto', 'Auto'], ['portrait', 'Portrait'], ['landscape', 'Landscape']] },
+        { type: 'select', key: 'readerAutoSpeed', title: 'Auto read speed', description: 'How fast auto read scrolls or turns pages. Start it from the reader options.', options: [['1', 'Very slow'], ['2', 'Slow'], ['3', 'Medium'], ['4', 'Fast'], ['5', 'Very fast']] },
         { type: 'planned', id: 'keep-awake', title: 'Keep screen on', description: 'Stop the screen sleeping while you read.' }
+      ] },
+      { id: 'reader-display', title: 'Reader display and controls', items: [
+        { type: 'toggle', key: 'readerShowStatusBar', title: 'Show status bar', description: 'Turn off to read full screen. Android app only.' },
+        { type: 'toggle', key: 'readerShowClock', title: 'Time and battery', description: 'A small clock and battery level on the page. Battery level depends on your device.' },
+        { type: 'toggle', key: 'readerVolumeKeys', title: 'Volume keys turn pages', description: 'Volume down goes forward, volume up goes back, only while the reader is open. Android app only.' },
+        { type: 'toggle', key: 'readerChapterNotice', title: 'Chapter reminder', description: 'Show the chapter name when you open it, so you always know where you are.' },
+        { type: 'toggle', key: 'readerSkipExtras', title: 'Skip extras', description: 'Next and previous chapter skip chapters without a chapter number, such as side stories and extras.' },
+        { type: 'action', action: 'reader-tips-reset', title: 'Operation tips', description: 'Show the reader tips again the next time you open a chapter.', button: 'Show again' }
       ] },
       { id: 'progress', title: 'Progress', items: [
         { type: 'info', title: 'Resume where you left off', value: 'Automatic', description: 'The reader reopens a chapter at the page you stopped on. Finished chapters reopen at page one.' },

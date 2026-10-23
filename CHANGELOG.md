@@ -43,3 +43,12 @@
 - If the WebView will not show a page image, the reader now fetches the same address through the app's own network layer (Capacitor native HTTP) and shows that copy. It also reports the real size and X-Cache result to MangaDex in that case.
 - When a page still fails, the message says why (refused 403, not found 404, rate limited, could not connect, not an image) and names the image server host and port, so a blocked network can be told apart from an expired address.
 - Fix: a failed page no longer needs an automatic address refresh before the app-network fallback is tried.
+
+## 0.8.0 - Reader options
+- New **Reader options** sheet (sliders button in the reader's top bar): reading mode (left to right, right to left, vertical), image quality, **auto read** with five speeds, **screen rotation** (auto, portrait, landscape), **show status bar**, **time and battery**, **volume keys turn pages**, **chapter reminder**, **skip extras**, share the chapter link, the operation tips, and a shortcut to more settings. Every option is also in Settings > Reading and is saved on the device.
+- Auto read scrolls by itself in vertical mode and turns pages on a timer in the page modes. Touching the page while it scrolls pauses it, and the on-screen pill resumes or stops it.
+- Operation tips appear the first time you open the reader and can be shown again from the sheet or from Settings.
+- Fix: a chapter MangaDex has no readable pages for (for example some One Piece chapters) now says so, using the Worker's own message, instead of claiming the reader is not available yet.
+- Android build: adds the Capacitor Status Bar and Screen Orientation plugins and a small `MainActivity` hook that passes the volume keys to the page only while the reader is open and the volume option is on (the reader address carries `?vol=1`). Everywhere else the volume keys work normally.
+- Status bar, rotation and volume keys only work in the Android app. In a browser they say so instead of failing.
+- The Worker did not change in this version.
