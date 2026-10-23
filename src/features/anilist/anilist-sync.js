@@ -38,7 +38,8 @@ async function activeClient(fetchImpl) {
 
 // Maps: AniList id <-> internal content id, built from sourceEntries (provider ids live there by design).
 async function loadMappings() {
-  const rows = await getAllRecords('sourceEntries');
+  // Chapter-source link rows describe where chapters come from; they are not identity mappings.
+  const rows = (await getAllRecords('sourceEntries')).filter(row => !row.linkRole);
   const byKey = new Map(rows.map(row => [`${row.sourceId}:${row.externalId}`, row.contentItemId]));
   const mediaByContent = new Map();
   for (const row of rows) if (row.sourceId === 'anilist') mediaByContent.set(row.contentItemId, String(row.externalId));

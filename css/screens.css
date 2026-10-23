@@ -93,3 +93,20 @@
   .details-layout { grid-template-columns: 92px minmax(0, 1fr); gap: 12px; }
   .details-cover { width: 92px; }
 }
+
+/* AniList -> MangaDex linking */
+.link-search { display: flex; gap: 8px; margin: 12px 0; }
+.link-search .field { flex: 1; min-width: 0; }
+.link-candidates { display: grid; gap: 10px; margin: 12px 0; }
+.link-candidate { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px; border-radius: var(--radius-m); background: var(--surface); }
+.link-candidate-cover .library-cover { width: 52px; height: 74px; object-fit: cover; border-radius: 8px; }
+.link-candidate-main { display: grid; gap: 3px; min-width: 0; }
+.link-candidate-main strong { overflow-wrap: anywhere; }
+.link-candidate-main small, .link-candidate-open { font-size: .74rem; color: var(--muted); }
+.link-candidate-open { text-decoration: underline; }
+.pill-label.warn { background: #f2c06b26; color: var(--text); }
+.link-banner { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 10px 12px; margin-bottom: 14px; border-radius: var(--radius-m); background: var(--surface); }
+.link-banner > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.link-banner small { color: var(--muted); font-size: .74rem; overflow-wrap: anywhere; }
+.link-banner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 420px) { .link-candidate { grid-template-columns: 44px minmax(0, 1fr); } .link-candidate > button { grid-column: 1 / -1; } }

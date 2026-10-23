@@ -6,6 +6,8 @@ import {
   exportBackup, getCatalogueItems, getCollections, getLibraryItems,
   getCollectionLibraryItems, importBackup, removeFromLibrary, setLibraryStatus, toggleFavorite
 } from './data/repositories/library-repository.js';
+import { getMangaDexLink, findOtherItemsForMangaDex, removeMangaDexLink, saveMangaDexLink } from './data/repositories/link-repository.js';
+import { chapterSourceId, findMangaDexMatch, isLinkableAniListItem, searchCandidates, searchQueriesFor, withFallbackMetadata } from './features/linking/mangadex-link.js';
 import { sourceRegistry } from './sources/source-registry.js';
 import { adultActive, configureAdult } from './services/api-client.js';
 import { isNativeApp as runningInApp } from './features/anilist/anilist-native.js';
@@ -34,7 +36,7 @@ const state = {
   library: [], libraryById: new Map(), libraryStatusFilter: 'all', collections: [], selectedCollectionId: '',
   anilist: { account: null, status: { connected: false, expired: false, label: 'Not connected' }, busy: false },
   readerContext: null, readerHandle: null, readerReturnHash: '#library',
-  detailsItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
+  detailsItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, detailsLink: null, link: { status: 'idle', candidates: [], query: '', message: '', changing: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
 };
 
 const app = new AppController({
@@ -614,12 +616,15 @@ function chapterLanguageOptions() {
   return all + CHAPTER_LANGUAGES.map(([value, label]) => `<option value="${value}" ${current === value ? 'selected' : ''}>${label}</option>`).join('');
 }
 
-function renderDetailsContent(item) {
-  if (!item) return;
+function renderDetailsContent(rawItem) {
+  if (!rawItem) return;
+  const item = withFallbackMetadata(rawItem, state.detailsLink);
+  const linkable = isLinkableAniListItem(rawItem);
   const entry = getLibraryEntry(item.id);
   const safeSourceUrl = item.sourceId === 'mangadex' ? safeMangaDexTitleUrl(item.sourceUrl) : item.sourceId === 'anilist' ? safeAniListUrl(item.sourceUrl) : '';
   const sourceName = item.sourceId === 'anilist' ? 'AniList' : 'MangaDex';
   const sourceLink = safeSourceUrl ? `<a class="button-primary" href="${escapeHtml(safeSourceUrl)}" target="_blank" rel="noopener noreferrer">Open ${sourceName} ↗</a>` : '';
+  const fallbackNote = item.usedFallback?.length ? `<p class="muted">Filled in from MangaDex because AniList has none: ${escapeHtml(item.usedFallback.join(', '))}.</p>` : '';
   const metadataNotice = state.detailsMetadataError ? `<div class="notice warning"><strong>Using cached metadata.</strong> ${escapeHtml(state.detailsMetadataError)}</div>` : '';
   const canRead = Boolean(sourceRegistry.get('mangadex')?.capabilities?.chapterContent);
   const chapterRows = state.detailsChapters.map(chapter => {
@@ -635,7 +640,123 @@ function renderDetailsContent(item) {
   else if (!state.detailsChapters.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters in this result.</strong><span>Try another language or open the source page.</span></div>';
   const pagination = state.detailsChapterPagination;
   const pagesMarkup = pagination.total > pagination.limit ? `<div class="page-controls chapter-pager"><button class="button" data-action="chapter-page-back" ${pagination.page <= 1 ? 'disabled' : ''}>‹ Previous</button><div class="page-count"><strong>Page ${pagination.page}</strong>${Number(pagination.total).toLocaleString()} chapters</div><button class="button" data-action="chapter-page-next" ${!pagination.hasNext ? 'disabled' : ''}>Next ›</button></div>` : '';
-  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? 'AniList title' : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div><section class="chapter-panel"><div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
+  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div>${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
+}
+
+
+// ---- AniList -> MangaDex linking -------------------------------------------------------------
+const idleLink = () => ({ status: 'idle', candidates: [], query: '', message: '', changing: false });
+const mangaDexSearch = async query => (await sourceRegistry.search('mangadex', query, 1)).items;
+const chapterSourceFor = item => chapterSourceId(item, state.detailsLink);
+
+function linkSearchDisabled() {
+  return state.settings && !state.settings.enableOnlineSearch ? 'Online search is turned off in Settings, so MangaDex cannot be searched.' : '';
+}
+
+function rerenderDetails(item) { renderDetailsContent(currentDetailsItem() || item); }
+
+async function selectLinkCandidate(mangadexId) {
+  const item = currentDetailsItem();
+  const candidate = state.link.candidates.find(row => row.externalId === mangadexId);
+  if (!isLinkableAniListItem(item) || !candidate) return;
+  if (candidate.idStatus === 'other' && !window.confirm(`MangaDex lists AniList #${candidate.anilistId} for "${candidate.title}", not #${item.externalId}. Link it anyway?`)) return;
+  await applyLink(item, candidate, candidate.idStatus === 'exact' ? 'anilist-id' : 'user-selected', state.detailsSequence);
+}
+
+async function unlinkMangaDex() {
+  const item = currentDetailsItem();
+  if (!isLinkableAniListItem(item) || !state.detailsLink) return;
+  if (!window.confirm('Unlink this title from MangaDex? Your library entry and reading history stay.')) return;
+  await removeMangaDexLink(item.id);
+  state.detailsLink = null;
+  state.detailsChapters = [];
+  state.detailsError = '';
+  state.detailsChapterPagination = { page: 1, limit: 24, total: 0, hasNext: false };
+  toast('Unlinked from MangaDex.');
+  await runLinkSearch(item, item.title);
+}
+
+async function loadLinkedChapters(row, sequence) {
+  state.detailsChapters = [];
+  state.detailsChapterPagination = { page: 1, limit: 24, total: 0, hasNext: false };
+  await loadDetailsChapters(row.externalId, 1, state.detailsChapterLanguage, sequence);
+}
+
+async function applyLink(item, candidate, kind, sequence) {
+  const row = await saveMangaDexLink(item, candidate, kind);
+  const duplicate = await findOtherItemsForMangaDex(row.externalId, item.id);
+  if (sequence !== state.detailsSequence) return row;
+  state.detailsLink = row;
+  state.link = idleLink();
+  rerenderDetails(item);
+  toast(kind === 'anilist-id' ? 'Linked to MangaDex by its AniList ID.' : duplicate ? 'Linked. This MangaDex title is also saved separately in your library.' : 'Linked to MangaDex.');
+  await loadLinkedChapters(row, sequence);
+  return row;
+}
+
+// Step 1: exact AniList ID. Step 2 (no exact match): show candidates and wait for the person to choose.
+async function runLinkMatching(item, sequence) {
+  const blocked = linkSearchDisabled();
+  if (blocked) { state.link = { ...idleLink(), status: 'error', message: blocked }; rerenderDetails(item); return; }
+  state.link = { ...idleLink(), status: 'searching', query: searchQueriesFor(item)[0] || item.title };
+  rerenderDetails(item);
+  try {
+    const result = await findMangaDexMatch(item, { search: mangaDexSearch, filter: isRatingVisible });
+    if (sequence !== state.detailsSequence) return;
+    if (result.status === 'exact') { await applyLink(item, result.candidate, 'anilist-id', sequence); return; }
+    state.link = { ...idleLink(), status: 'candidates', candidates: result.candidates, query: state.link.query, message: result.partialFailure ? 'Some searches failed, so this list may be incomplete.' : '' };
+  } catch (error) {
+    if (sequence !== state.detailsSequence) return;
+    state.link = { ...idleLink(), status: 'error', query: state.link.query, message: chapterApiUnavailableMessage(error) };
+  }
+  rerenderDetails(item);
+}
+
+async function runLinkSearch(item, query, { changing = false } = {}) {
+  const sequence = state.detailsSequence;
+  const blocked = linkSearchDisabled();
+  if (blocked) { state.link = { ...idleLink(), status: 'error', query, message: blocked, changing }; rerenderDetails(item); return; }
+  state.link = { ...idleLink(), status: 'searching', query, changing };
+  rerenderDetails(item);
+  try {
+    const result = await searchCandidates(item, query, { search: mangaDexSearch, filter: isRatingVisible });
+    if (sequence !== state.detailsSequence) return;
+    state.link = { ...idleLink(), status: 'candidates', candidates: result.candidates, query: result.query || query, changing };
+  } catch (error) {
+    if (sequence !== state.detailsSequence) return;
+    state.link = { ...idleLink(), status: 'error', query, message: chapterApiUnavailableMessage(error), changing };
+  }
+  rerenderDetails(item);
+}
+
+function renderLinkPanel(item) {
+  const link = state.link;
+  const query = link.query || item.title || '';
+  const form = `<form class="link-search" data-form="link-search" role="search"><label class="sr-only" for="linkQuery">Search MangaDex</label><input id="linkQuery" name="q" class="field" type="search" autocomplete="off" maxlength="100" value="${escapeHtml(query)}" placeholder="Search MangaDex by title"><button class="button" type="submit">Search</button></form>`;
+  const cancel = link.changing ? '<button class="button-subtle" type="button" data-action="link-cancel">Keep current link</button>' : '';
+  let body = '';
+  if (link.status === 'searching') body = `<div class="empty-state chapter-empty"><span class="spinner"></span><strong>Looking for this title on MangaDex…</strong><span>Checking for a title that lists AniList ID ${escapeHtml(item.externalId)}.</span></div>`;
+  else if (link.status === 'error') body = `<div class="notice warning"><strong>MangaDex search unavailable.</strong> ${escapeHtml(link.message)}</div>`;
+  else if (link.status === 'idle') body = `<p class="muted">Chapters come from MangaDex. Link this AniList title to its MangaDex page to list and read them here.</p><div class="details-actions"><button class="button-primary" type="button" data-action="link-find">Find on MangaDex</button></div>`;
+  else {
+    const rows = link.candidates.map(candidate => {
+      const url = safeMangaDexTitleUrl(candidate.sourceUrl);
+      const badge = candidate.idStatus === 'exact' ? '<span class="pill-label accent">AniList ID matches</span>'
+        : candidate.idStatus === 'other' ? `<span class="pill-label warn">MangaDex lists AniList #${escapeHtml(candidate.anilistId)} for this title</span>`
+        : '<span class="pill-label">No AniList ID on MangaDex</span>';
+      const meta = [candidate.releaseYear, candidate.publicationStatus !== 'unknown' ? candidate.publicationStatus : '', (candidate.authors || []).slice(0, 2).join(', ')].filter(Boolean).join(' · ');
+      return `<article class="link-candidate"><div class="link-candidate-cover">${coverMarkup(candidate, true)}</div><div class="link-candidate-main"><strong>${escapeHtml(candidate.title)}</strong><small>${escapeHtml(meta || 'No details')}</small>${badge}${url ? `<a class="link-candidate-open" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Preview on MangaDex ↗</a>` : ''}</div><button class="button-primary button-small" type="button" data-action="link-select" data-md-id="${escapeHtml(candidate.externalId)}">${candidate.idStatus === 'other' ? 'Link anyway' : 'Link'}</button></article>`;
+    }).join('');
+    const intro = link.changing ? 'Choose the MangaDex title to use for chapters.' : `No MangaDex title lists AniList ID ${escapeHtml(item.externalId)}, so nothing was matched automatically. Pick the right title, or search by another name.`;
+    body = `<p class="muted">${intro}</p>${link.message ? `<div class="notice warning">${escapeHtml(link.message)}</div>` : ''}${rows ? `<div class="link-candidates">${rows}</div>` : '<div class="empty-state chapter-empty"><strong>No MangaDex results.</strong><span>Try another spelling or the native title.</span></div>'}`;
+  }
+  return `<section class="chapter-panel link-panel"><div class="section-topline chapter-heading"><div><h3>Find chapters on MangaDex</h3><p>Chapter lists and the reader use MangaDex. Your AniList info stays as it is.</p></div></div>${form}${body}${cancel}</section>`;
+}
+
+function renderLinkBanner(row) {
+  const url = safeMangaDexTitleUrl(row.sourceUrl);
+  const how = row.linkKind === 'anilist-id' ? 'matched by AniList ID' : 'chosen by you';
+  return `<div class="link-banner"><div><strong>Chapters from MangaDex</strong><small>${escapeHtml(row.sourceTitle || 'MangaDex title')} · ${how}</small></div><div class="link-banner-actions">${url ? `<a class="button button-small" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}<button class="button button-small" type="button" data-action="link-change">Change</button><button class="button button-small button-danger" type="button" data-action="link-remove">Unlink</button></div></div>`;
 }
 
 async function loadDetailsChapters(externalId, page = 1, language = state.detailsChapterLanguage, sequence = state.detailsSequence) {
@@ -672,6 +793,8 @@ async function openDetails(contentItemId) {
   state.detailsItemId = contentItemId;
   state.detailsLoading = true;
   state.detailsLoadingChapters = item.sourceId === 'mangadex';
+  state.detailsLink = null;
+  state.link = idleLink();
   state.detailsMetadataError = '';
   state.detailsError = '';
   state.detailsChapters = [];
@@ -682,6 +805,22 @@ async function openDetails(contentItemId) {
   const dialog = document.getElementById('detailsDialog');
   if (!dialog.open && typeof dialog.showModal === 'function') dialog.showModal();
   else if (!dialog.open) dialog.setAttribute('open', '');
+
+  // An AniList-only title borrows its chapters from a linked MangaDex record (see docs/LINKING.md).
+  if (isLinkableAniListItem(item)) {
+    try { state.detailsLink = await getMangaDexLink(item.id); } catch (error) { console.warn('Could not read the MangaDex link:', error); }
+    if (sequence !== state.detailsSequence) return;
+    state.detailsLoading = false;
+    if (state.detailsLink) {
+      state.detailsLoadingChapters = true;
+      renderDetailsContent(item);
+      await loadDetailsChapters(state.detailsLink.externalId, 1, state.detailsChapterLanguage, sequence);
+    } else {
+      state.detailsLoadingChapters = false;
+      await runLinkMatching(item, sequence);
+    }
+    return;
+  }
 
   if (item.sourceId !== 'mangadex' || !item.externalId) {
     state.detailsLoading = false;
@@ -904,8 +1043,13 @@ async function handleAction(action, target) {
     case 'close-details': closeDetails(); break;
     case 'read-chapter': startReading(target.dataset.chapterId); break;
     case 'reader-tips-reset': resetTips(); toast('The reader tips will show next time you open a chapter.'); break;
-    case 'chapter-page-back': { const item = currentDetailsItem(); if (item?.externalId && state.detailsChapterPagination.page > 1) await loadDetailsChapters(item.externalId, state.detailsChapterPagination.page - 1); break; }
-    case 'chapter-page-next': { const item = currentDetailsItem(); if (item?.externalId && state.detailsChapterPagination.hasNext) await loadDetailsChapters(item.externalId, state.detailsChapterPagination.page + 1); break; }
+    case 'chapter-page-back': { const sourceId = chapterSourceFor(currentDetailsItem()); if (sourceId && state.detailsChapterPagination.page > 1) await loadDetailsChapters(sourceId, state.detailsChapterPagination.page - 1); break; }
+    case 'chapter-page-next': { const sourceId = chapterSourceFor(currentDetailsItem()); if (sourceId && state.detailsChapterPagination.hasNext) await loadDetailsChapters(sourceId, state.detailsChapterPagination.page + 1); break; }
+    case 'link-find': { const item = currentDetailsItem(); if (isLinkableAniListItem(item)) await runLinkMatching(item, state.detailsSequence); break; }
+    case 'link-select': await selectLinkCandidate(target.dataset.mdId); break;
+    case 'link-change': { const item = currentDetailsItem(); if (isLinkableAniListItem(item)) await runLinkSearch(item, item.title, { changing: true }); break; }
+    case 'link-cancel': { state.link = idleLink(); rerenderDetails(currentDetailsItem()); break; }
+    case 'link-remove': await unlinkMangaDex(); break;
     case 'retry-search': await loadSearch(state.query, state.page); break;
     case 'clear-search': state.genre = 'all'; await loadSearch('', 1); break;
     case 'genre-filter': state.genre = target.dataset.genre || 'all'; await app.navigate('discover'); break;
@@ -941,6 +1085,13 @@ function bindUiEvents() {
   });
 
   document.addEventListener('submit', event => {
+    const linkForm = event.target.closest('form[data-form="link-search"]');
+    if (linkForm) {
+      event.preventDefault();
+      const item = currentDetailsItem();
+      if (isLinkableAniListItem(item)) runLinkSearch(item, new FormData(linkForm).get('q'), { changing: state.link.changing });
+      return;
+    }
     const form = event.target.closest('form[data-form="search"]');
     if (!form) return;
     event.preventDefault();
@@ -968,8 +1119,8 @@ function bindUiEvents() {
         const item = row?.item || state.results.find(entry => entry.id === itemId);
         if (item) { await setLibraryStatus(item, input.value); queueAniListPush(item.id); await refreshLibraryIndex(); await app.navigate('library'); toast('Reading status updated.'); }
       } else if (input.matches('[data-action="chapter-language"]')) {
-        const item = currentDetailsItem();
-        if (item?.externalId) await loadDetailsChapters(item.externalId, 1, input.value);
+        const sourceId = chapterSourceFor(currentDetailsItem());
+        if (sourceId) await loadDetailsChapters(sourceId, 1, input.value);
       } else if (input.matches('[data-action="status-filter"]')) {
         state.libraryStatusFilter = input.value;
         await app.navigate('library');
