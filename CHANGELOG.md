@@ -52,3 +52,9 @@
 - Android build: adds the Capacitor Status Bar and Screen Orientation plugins and a small `MainActivity` hook that passes the volume keys to the page only while the reader is open and the volume option is on (the reader address carries `?vol=1`). Everywhere else the volume keys work normally.
 - Status bar, rotation and volume keys only work in the Android app. In a browser they say so instead of failing.
 - The Worker did not change in this version.
+
+## 0.9.0 - AniList to MangaDex linking
+- AniList-only titles can now list and read chapters: the title sheet matches the AniList numeric ID against MangaDex's `anilistId`, and otherwise offers a candidate picker. Titles are never linked by name similarity.
+- The link is a separate `sourceEntries` row (no schema change). AniList description and artwork are kept; MangaDex only fills blanks. Chapter availability comes from the linked MangaDex record.
+- Change or unlink from the title sheet. New `docs/LINKING.md`, 14 unit tests and an end-to-end test.
+- Service worker cache bumped to `v8`.
