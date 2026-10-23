@@ -4,13 +4,24 @@ import { buildPageUrls, clampPage, isChapterId, pagesExpired, pickQuality, shoul
 import { sendReport } from './reader-report.js';
 import { describeFailure, fetchImageNative, shortDetails } from './reader-native.js';
 import { loadChapterProgress, recordReadingSession, saveChapterProgress } from './reader-progress.js';
+import {
+  AUTO_SPEEDS, autoSpeed, findNeighbor, formatStatusLine, getBatteryReader, markTipsSeen, setOrientation,
+  setStatusBarVisible, setVolumeCapture, shareLink, tipsSeen, volumeAction
+} from './reader-features.js';
 
 const MODES = ['scroll', 'rtl', 'ltr'];
-const MODE_LABEL = { scroll: 'Vertical scroll', rtl: 'Right to left', ltr: 'Left to right' };
-const QUALITY_LABEL = { data: 'Original quality', 'data-saver': 'Data saver' };
 const PRELOAD_AHEAD = 2;
 const MIN_ERROR_REFRESH_GAP_MS = 3000; // spacing between refreshes triggered by failing images
 const MAX_ERROR_REFRESHES = 4;         // per chapter visit, so a broken node cannot cause a request storm
+const CLOCK_INTERVAL_MS = 30000;
+// Setting key -> option name used inside the reader.
+const TOGGLES = Object.freeze({
+  readerShowStatusBar: 'showStatusBar',
+  readerShowClock: 'showClock',
+  readerVolumeKeys: 'volumeKeys',
+  readerChapterNotice: 'chapterNotice',
+  readerSkipExtras: 'skipExtras'
+});
 
 export function renderReaderShell() {
   return `<section class="reader" id="readerRoot" aria-label="Manga reader"><div class="reader-status"><span class="spinner"></span><p>Opening chapter…</p></div></section>`;
@@ -20,10 +31,16 @@ function chapterLabel(chapter) {
   return chapter?.label || 'Chapter';
 }
 
-function friendlyError(error) {
-  if (error?.code === 'CHAPTER_EXTERNAL') return { title: 'Hosted on another site', text: 'This chapter is not served by MangaDex, so it cannot be shown here. Open it from the source link.' };
-  if (error?.status === 404) return { title: 'Reader not available yet', text: 'The catalogue API does not offer chapter pages yet, or this chapter is unavailable. If you host the Worker yourself, deploy the updated version, then try again.' };
-  if (error?.code === 'RATE_LIMITED') return { title: 'Slow down a moment', text: 'MangaDex is rate-limiting requests. Wait a few seconds and try again.' };
+// Decide by the Worker's error code, not the HTTP status: a 404 can mean an old Worker without the page
+// endpoint, or just a chapter MangaDex has no readable pages for.
+export function friendlyError(error) {
+  const code = error?.code;
+  if (code === 'CHAPTER_EXTERNAL') return { title: 'Hosted on another site', text: 'This chapter is not served by MangaDex, so it cannot be shown here. Open it from the source link.' };
+  if (code === 'CHAPTER_UNAVAILABLE') {
+    return { title: 'This chapter is not available', text: `${error?.message || 'MangaDex has no readable pages for it.'} MangaDex may have removed or restricted it. Try another chapter, or open it on MangaDex.` };
+  }
+  if (error?.status === 404) return { title: 'Reader not available yet', text: 'The catalogue API does not offer chapter pages yet. If you host the Worker yourself, deploy the updated version, then try again.' };
+  if (code === 'RATE_LIMITED') return { title: 'Slow down a moment', text: 'MangaDex is rate-limiting requests. Wait a few seconds and try again.' };
   return { title: 'Could not open this chapter', text: error?.message || 'Check your connection and try again.' };
 }
 
@@ -32,31 +49,51 @@ function friendlyError(error) {
  * which keeps it testable and avoids circular imports.
  * Returns { destroy }.
  */
-export function mountReader(host, { chapterId, context, settings, loadPages, onClose, onOpenChapter, onSetting }) {
+export function mountReader(host, { chapterId, context, settings, loadPages, onClose, onOpenChapter, onSetting, onOpenSettings }) {
   const chapters = Array.isArray(context?.chapters) ? context.chapters : [];
   const position = chapters.findIndex(chapter => chapter.id === chapterId);
   const current = position >= 0 ? chapters[position] : null;
-  // The chapter list is newest first, so "next" is the previous array entry.
-  const nextChapter = position > 0 ? chapters[position - 1] : null;
-  const prevChapter = position >= 0 && position < chapters.length - 1 ? chapters[position + 1] : null;
   const contentItemId = context?.contentItemId || null;
+  const isApp = Boolean(window.Capacitor?.isNativePlatform?.());
 
   const view = {
     pages: null, urls: [], page: 0, total: 0, ended: false,
     mode: MODES.includes(settings?.readerMode) ? settings.readerMode : 'scroll',
     quality: settings?.readerQuality === 'data-saver' ? 'data-saver' : 'data',
     fit: settings?.readerFit === 'height' ? 'height' : 'width',
-    uiVisible: true, destroyed: false, refreshing: null, lastRefresh: 0, lastErrorRefresh: 0, errorRefreshes: 0,
-    startedAt: Date.now(), activeSeconds: 0, saveTimer: null, observer: null, loadObserver: null
+    opts: {
+      showStatusBar: settings?.readerShowStatusBar !== false,
+      showClock: Boolean(settings?.readerShowClock),
+      volumeKeys: Boolean(settings?.readerVolumeKeys),
+      chapterNotice: Boolean(settings?.readerChapterNotice),
+      skipExtras: Boolean(settings?.readerSkipExtras),
+      orientation: ['portrait', 'landscape'].includes(settings?.readerOrientation) ? settings.readerOrientation : 'auto',
+      autoSpeed: autoSpeed(settings?.readerAutoSpeed).id
+    },
+    uiVisible: true, sheetOpen: false, tips: false, destroyed: false,
+    refreshing: null, lastRefresh: 0, lastErrorRefresh: 0, errorRefreshes: 0,
+    startedAt: Date.now(), activeSeconds: 0, saveTimer: null, observer: null, loadObserver: null,
+    statusHidden: false, orientationLocked: false, clockTimer: 0, battery: null
   };
+  const auto = { on: false, paused: false, raf: 0, timer: 0, last: 0, carry: 0 };
   const controller = new AbortController();
   const started = new Map(); // index -> { start, url, retried }
   const blobUrls = new Map(); // index -> object URL for pages loaded through the app's own network layer
-  const failures = new Map(); // index -> last failure result, shown to the reader
 
   const sourceUrl = isChapterId(chapterId) ? `https://mangadex.org/chapter/${encodeURIComponent(chapterId)}` : '';
+  const nextChapter = () => findNeighbor(chapters, position, 'next', view.opts.skipExtras);
+  const prevChapter = () => findNeighbor(chapters, position, 'prev', view.opts.skipExtras);
 
   function setStatus(html) { host.innerHTML = `<div class="reader-status">${html}</div>`; }
+
+  function toast(text, ms = 2600) {
+    host.querySelector('.reader-toast')?.remove();
+    const note = document.createElement('div');
+    note.className = 'reader-toast';
+    note.textContent = text;
+    host.appendChild(note);
+    window.setTimeout(() => note.remove(), ms);
+  }
 
   function showError(error) {
     const { title, text } = friendlyError(error);
@@ -116,7 +153,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     const index = Number(img.dataset.index);
     img.dataset.state = 'done';
     const info = started.get(index);
-    if (info && shouldReport(info.url)) {
+    if (info && shouldReport(info.url) && img.dataset.native !== '1') {
       sendReport({ url: info.url, success: true, cached: false, bytes: resourceBytes(info.url), duration: performance.now() - info.start });
     }
   }
@@ -146,7 +183,6 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     // First, ask the app's network layer for the same address. If that works the WebView was the problem.
     const result = await recoverWithNativeFetch(img, index, info.url);
     if (result.ok || view.destroyed) return;
-    failures.set(index, result);
     // Otherwise the address may have expired: get fresh ones once and try again.
     if (!info.retried) {
       info.retried = true;
@@ -167,8 +203,8 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   function showFailure(img, index, result) {
     const holder = img.closest('.reader-slot');
     if (!holder || holder.querySelector('.reader-retry')) return;
-    const host = hostOf(started.get(index)?.url || view.urls[index]);
-    holder.insertAdjacentHTML('beforeend', `<div class="reader-retry"><p>${escapeHtml(describeFailure(result, host))}</p><small>${escapeHtml(shortDetails(result))}</small><button class="button" data-reader="retry-image" data-index="${index}">Retry page ${index + 1}</button></div>`);
+    const server = hostOf(started.get(index)?.url || view.urls[index]);
+    holder.insertAdjacentHTML('beforeend', `<div class="reader-retry"><p>${escapeHtml(describeFailure(result, server))}</p><small>${escapeHtml(shortDetails(result))}</small><button class="button" data-reader="retry-image" data-index="${index}">Retry page ${index + 1}</button></div>`);
   }
 
   function bindImage(img) {
@@ -181,7 +217,6 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     if (!img) return;
     img.closest('.reader-slot')?.querySelector('.reader-retry')?.remove();
     img.dataset.native = '';
-    failures.delete(index);
     if (blobUrls.has(index)) { URL.revokeObjectURL(blobUrls.get(index)); blobUrls.delete(index); }
     const info = started.get(index) || { retried: false };
     started.set(index, { ...info, retried: false });
@@ -190,37 +225,117 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     await loadImage(img);
   }
 
-  // ---- layout --------------------------------------------------------------------------
+  // ---- markup --------------------------------------------------------------------------
   function slotMarkup(index) {
     return `<div class="reader-slot" data-slot="${index}"><img class="reader-img" data-index="${index}" alt="Page ${index + 1} of ${view.total}" decoding="async" referrerpolicy="no-referrer" draggable="false"></div>`;
   }
 
   function endCardMarkup() {
-    return `<div class="reader-end" data-end="true"><h3>End of ${escapeHtml(chapterLabel(current))}</h3><div class="reader-status-actions">${nextChapter ? `<button class="button" data-reader="next-chapter">Next: ${escapeHtml(chapterLabel(nextChapter))}</button>` : ''}<button class="button-subtle" data-reader="close">Back to title</button></div>${nextChapter ? '' : '<p class="muted">No newer chapter in the list you opened this from.</p>'}</div>`;
+    const next = nextChapter();
+    return `<div class="reader-end" data-end="true"><h3>End of ${escapeHtml(chapterLabel(current))}</h3><div class="reader-status-actions">${next ? `<button class="button" data-reader="next-chapter">Next: ${escapeHtml(chapterLabel(next))}</button>` : ''}<button class="button-subtle" data-reader="close">Back to title</button></div>${next ? '' : '<p class="muted">No newer chapter in the list you opened this from.</p>'}</div>`;
   }
 
   function barMarkup() {
-    const groups = current ? '' : '';
     return `<header class="reader-bar" ${view.uiVisible ? '' : 'hidden'}>
       <button class="icon-button" data-reader="close" aria-label="Close reader">${icon('chevronLeft')}</button>
       <div class="reader-title"><strong>${escapeHtml(context?.title || 'Reading')}</strong><small>${escapeHtml(chapterLabel(current))}</small></div>
-      <button class="button-subtle reader-chip" data-reader="mode" aria-label="Reading mode: ${MODE_LABEL[view.mode]}. Tap to change">${MODE_LABEL[view.mode]}</button>
-      <button class="button-subtle reader-chip" data-reader="quality" aria-label="Image quality: ${QUALITY_LABEL[view.quality]}. Tap to change">${view.quality === 'data' ? 'HD' : 'Saver'}</button>
-      ${groups}</header>`;
+      <button class="icon-button" data-reader="sheet-open" aria-label="Reader options" aria-haspopup="dialog">${icon('sliders')}</button>
+    </header>`;
   }
 
   function footMarkup() {
     const shown = Math.min(view.page + 1, view.total);
     return `<footer class="reader-foot" ${view.uiVisible ? '' : 'hidden'}>
-      <button class="button-subtle" data-reader="prev-chapter" ${prevChapter ? '' : 'disabled'} aria-label="Previous chapter">‹ Prev</button>
+      <button class="button-subtle" data-reader="prev-chapter" ${prevChapter() ? '' : 'disabled'} aria-label="Previous chapter">‹ Prev</button>
       <label class="reader-slider"><span class="reader-count" id="readerCount">${shown} / ${view.total}</span><input type="range" min="1" max="${Math.max(1, view.total)}" value="${shown}" data-reader="seek" aria-label="Go to page" ${view.mode === 'rtl' ? 'dir="rtl"' : ''}></label>
-      <button class="button-subtle" data-reader="next-chapter" ${nextChapter ? '' : 'disabled'} aria-label="Next chapter">Next ›</button>
+      <button class="button-subtle" data-reader="next-chapter" ${nextChapter() ? '' : 'disabled'} aria-label="Next chapter">Next ›</button>
     </footer>`;
   }
 
   function attribution() {
     const groups = Array.isArray(current?.groups) && current.groups.length ? `Group: ${escapeHtml(current.groups.join(', '))} · ` : '';
     return `<p class="reader-credit">${groups}Pages are served by MangaDex and are not stored by this app. ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open on MangaDex ↗</a>` : ''}</p>`;
+  }
+
+  function segment(value, label, active, action, glyph = '') {
+    return `<button class="reader-seg${active ? ' is-on' : ''}" data-reader="${action}" data-value="${escapeHtml(value)}" aria-pressed="${active}">${glyph ? `<span aria-hidden="true">${glyph}</span>` : ''}${escapeHtml(label)}</button>`;
+  }
+
+  function switchRow(key, title, hint, requiresApp = false) {
+    const name = TOGGLES[key];
+    const on = Boolean(view.opts[name]);
+    const note = requiresApp && !isApp ? ' (Android app only)' : '';
+    return `<div class="reader-row"><div class="reader-row-text"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(hint)}${note}</small></div><button class="reader-switch" role="switch" aria-checked="${on}" aria-label="${escapeHtml(title)}" data-reader="toggle" data-key="${key}"><span></span></button></div>`;
+  }
+
+  function sheetMarkup() {
+    const o = view.opts;
+    const speed = autoSpeed(o.autoSpeed);
+    return `<div class="reader-sheet-backdrop" data-reader="sheet-close"></div>
+    <div class="reader-sheet" role="dialog" aria-modal="true" aria-label="Reader options">
+      <div class="reader-sheet-head"><strong>Reader options</strong><button class="button-subtle" data-reader="sheet-close">Done</button></div>
+      <div class="reader-sheet-body">
+        <div class="reader-group"><span class="reader-group-label">Reading mode</span><div class="reader-segs">
+          ${segment('ltr', 'Left to right', view.mode === 'ltr', 'set-mode', '→')}${segment('rtl', 'Right to left', view.mode === 'rtl', 'set-mode', '←')}${segment('scroll', 'Vertical', view.mode === 'scroll', 'set-mode', '↕')}
+        </div></div>
+        <div class="reader-group"><span class="reader-group-label">Image quality</span><div class="reader-segs">
+          ${segment('data', 'Original', view.quality === 'data', 'set-quality')}${segment('data-saver', 'Data saver', view.quality === 'data-saver', 'set-quality')}
+        </div></div>
+        <div class="reader-group"><span class="reader-group-label">Auto read</span>
+          <div class="reader-row"><div class="reader-row-text"><strong>${auto.on ? 'Auto read is on' : 'Scroll or turn pages for you'}</strong><small class="reader-speed-label">Speed: ${escapeHtml(speed.label)}</small></div><button class="button${auto.on ? '' : '-primary'}" data-reader="auto-toggle">${auto.on ? 'Stop' : 'Start'}</button></div>
+          <input class="reader-range" type="range" min="1" max="${AUTO_SPEEDS.length}" step="1" value="${o.autoSpeed}" data-reader="auto-speed" aria-label="Auto read speed">
+        </div>
+        <div class="reader-group"><span class="reader-group-label">Screen rotation${isApp ? '' : ' (Android app only)'}</span><div class="reader-segs">
+          ${segment('auto', 'Auto', o.orientation === 'auto', 'set-orientation')}${segment('portrait', 'Portrait', o.orientation === 'portrait', 'set-orientation')}${segment('landscape', 'Landscape', o.orientation === 'landscape', 'set-orientation')}
+        </div></div>
+        <div class="reader-group">
+          ${switchRow('readerShowStatusBar', 'Show status bar', 'Keep the system bar visible while reading', true)}
+          ${switchRow('readerShowClock', 'Time and battery', 'A small clock and battery level on the page')}
+          ${switchRow('readerVolumeKeys', 'Volume keys turn pages', 'Volume down goes forward, volume up goes back', true)}
+          ${switchRow('readerChapterNotice', 'Chapter reminder', 'Show the chapter name when you open it')}
+          ${switchRow('readerSkipExtras', 'Skip extras', 'Next and previous skip chapters without a number')}
+        </div>
+        <div class="reader-group reader-actions">
+          <button class="reader-action" data-reader="share"><span>Share chapter link</span><span aria-hidden="true">↗</span></button>
+          <button class="reader-action" data-reader="show-tips"><span>See the operation tips again</span><span aria-hidden="true">›</span></button>
+          <button class="reader-action" data-reader="more-settings"><span>More settings</span><span aria-hidden="true">›</span></button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function tipsMarkup() {
+    const paged = view.mode !== 'scroll';
+    const items = [
+      'Tap the middle of the page to show or hide the bars.',
+      paged ? `Tap the left or right edge to turn the page${view.mode === 'rtl' ? ' (the left edge goes forward in right-to-left mode)' : ''}.` : 'Scroll to read. Drag the slider to jump to a page.',
+      'Tap the sliders button for reading mode, auto read, rotation and more.',
+      view.opts.volumeKeys ? 'Volume down goes forward and volume up goes back.' : 'Turn on volume keys in the options to turn pages with the phone buttons.',
+      'Your place is saved. Open the chapter again to continue where you stopped.'
+    ];
+    return `<div class="reader-tips" role="dialog" aria-modal="true" aria-label="Reader tips"><div class="reader-tips-card"><h3>Reader tips</h3><ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul><button class="button-primary" data-reader="tips-done">Got it</button></div></div>`;
+  }
+
+  function autoPillMarkup() {
+    if (!auto.on) return '';
+    return `<div class="reader-auto"><button class="button reader-auto-main" data-reader="auto-pause" aria-label="${auto.paused ? 'Resume auto read' : 'Pause auto read'}">${auto.paused ? '▶ Resume auto read' : '⏸ Auto read'}</button><button class="button-subtle" data-reader="auto-stop" aria-label="Stop auto read">✕</button></div>`;
+  }
+
+  function overlaysMarkup() {
+    return `${view.opts.showClock ? '<div class="reader-clock" id="readerClock"></div>' : ''}${autoPillMarkup()}${view.sheetOpen ? sheetMarkup() : ''}${view.tips ? tipsMarkup() : ''}`;
+  }
+
+  function renderOverlays() {
+    const box = host.querySelector('#readerOverlays');
+    if (!box) return;
+    box.innerHTML = overlaysMarkup();
+    updateClock();
+    if (view.sheetOpen) box.querySelector('.reader-sheet [data-reader="sheet-close"]')?.focus({ preventScroll: true });
+  }
+
+  function refreshFoot() {
+    const foot = host.querySelector('.reader-foot');
+    if (foot) foot.outerHTML = footMarkup();
   }
 
   function teardownObservers() {
@@ -234,12 +349,14 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     const slots = view.mode === 'scroll'
       ? Array.from({ length: view.total }, (_, index) => slotMarkup(index)).join('') + endCardMarkup()
       : (view.ended ? endCardMarkup() : slotMarkup(view.page));
-    host.innerHTML = `${barMarkup()}<div class="reader-stage" data-mode="${view.mode}" data-fit="${view.fit}" tabindex="0">${slots}${view.mode === 'scroll' ? attribution() : ''}</div>${footMarkup()}`;
+    host.innerHTML = `${barMarkup()}<div class="reader-stage" data-mode="${view.mode}" data-fit="${view.fit}" tabindex="0">${slots}${view.mode === 'scroll' ? attribution() : ''}</div>${footMarkup()}<div class="reader-overlays" id="readerOverlays">${overlaysMarkup()}</div>`;
     host.querySelectorAll('.reader-img').forEach(bindImage);
     const stage = host.querySelector('.reader-stage');
     if (view.mode === 'scroll') setupScrollMode(stage);
     else setupPagedMode();
-    stage?.focus({ preventScroll: true });
+    if (!view.sheetOpen && !view.tips) stage?.focus({ preventScroll: true });
+    updateClock();
+    scheduleAuto();
   }
 
   function setupScrollMode(stage) {
@@ -304,47 +421,202 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       render();
       return;
     }
-    if (target < 0) { if (prevChapter) onOpenChapter(prevChapter.id); return; }
+    if (target < 0) { const prev = prevChapter(); if (prev) onOpenChapter(prev.id); return; }
     view.page = target;
     scheduleSave();
     render();
   }
 
+  // One step forward (1) or back (-1): a page in paged modes, most of a screen when scrolling.
+  function step(direction) {
+    if (view.mode !== 'scroll') { goPaged(direction); return; }
+    const stage = host.querySelector('.reader-stage');
+    if (!stage) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    stage.scrollBy({ top: direction * stage.clientHeight * 0.85, behavior: reduce ? 'auto' : 'smooth' });
+  }
+
   // In right-to-left mode the "next page" direction is leftwards.
   const forwardDelta = side => (view.mode === 'rtl' ? (side === 'left' ? 1 : -1) : (side === 'left' ? -1 : 1));
 
-  function cycleMode() {
-    const nextMode = MODES[(MODES.indexOf(view.mode) + 1) % MODES.length];
-    view.mode = nextMode;
+  function setMode(mode) {
+    if (!MODES.includes(mode) || mode === view.mode) return;
+    view.mode = mode;
     view.ended = false;
-    onSetting?.('readerMode', nextMode);
+    onSetting?.('readerMode', mode);
     render();
   }
 
-  function toggleQuality() {
-    const nextQuality = view.quality === 'data' ? 'data-saver' : 'data';
-    if (!(nextQuality === 'data' ? view.pages.data : view.pages.dataSaver).length) return;
-    view.quality = nextQuality;
-    view.urls = buildPageUrls(view.pages, nextQuality);
+  function setQuality(quality) {
+    if (!view.pages || quality === view.quality) return;
+    if (!(quality === 'data' ? view.pages.data : view.pages.dataSaver).length) { toast('This chapter is not available in that quality.'); return; }
+    view.quality = quality;
+    view.urls = buildPageUrls(view.pages, quality);
     started.clear();
     for (const objectUrl of blobUrls.values()) URL.revokeObjectURL(objectUrl);
     blobUrls.clear();
-    onSetting?.('readerQuality', nextQuality);
+    onSetting?.('readerQuality', quality);
     render();
+  }
+
+  // ---- auto read -----------------------------------------------------------------------
+  function haltAutoLoops() {
+    window.cancelAnimationFrame(auto.raf);
+    window.clearInterval(auto.timer);
+    auto.raf = 0;
+    auto.timer = 0;
+  }
+
+  function scheduleAuto() {
+    haltAutoLoops();
+    if (!auto.on || auto.paused || view.destroyed) return;
+    const speed = autoSpeed(view.opts.autoSpeed);
+    if (view.mode === 'scroll') {
+      auto.last = 0;
+      auto.carry = 0;
+      const frame = timestamp => {
+        if (!auto.on || auto.paused || view.destroyed) return;
+        const stage = host.querySelector('.reader-stage');
+        if (stage) {
+          if (auto.last) {
+            auto.carry += ((timestamp - auto.last) / 1000) * speed.pxPerSecond;
+            const whole = Math.floor(auto.carry);
+            if (whole >= 1) { stage.scrollTop += whole; auto.carry -= whole; }
+          }
+          auto.last = timestamp;
+          if (stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 2) { stopAuto('Reached the end of the chapter.'); return; }
+        }
+        auto.raf = window.requestAnimationFrame(frame);
+      };
+      auto.raf = window.requestAnimationFrame(frame);
+    } else {
+      auto.timer = window.setInterval(() => {
+        if (view.ended) { stopAuto('Reached the end of the chapter.'); return; }
+        goPaged(1);
+      }, speed.secondsPerPage * 1000);
+    }
+  }
+
+  function startAuto() {
+    auto.on = true;
+    auto.paused = false;
+    view.sheetOpen = false;
+    renderOverlays();
+    scheduleAuto();
+  }
+
+  function stopAuto(message = '') {
+    auto.on = false;
+    auto.paused = false;
+    haltAutoLoops();
+    renderOverlays();
+    if (message) toast(message);
+  }
+
+  function setAutoPaused(paused) {
+    if (!auto.on || auto.paused === paused) return;
+    auto.paused = paused;
+    renderOverlays();
+    scheduleAuto();
+  }
+
+  // ---- display options -----------------------------------------------------------------
+  function updateClock() {
+    const el = host.querySelector('#readerClock');
+    if (el) el.textContent = formatStatusLine(new Date(), view.battery?.());
+  }
+
+  async function startClock() {
+    window.clearInterval(view.clockTimer);
+    if (!view.opts.showClock) return;
+    view.battery = view.battery || await getBatteryReader();
+    updateClock();
+    view.clockTimer = window.setInterval(updateClock, CLOCK_INTERVAL_MS);
+  }
+
+  async function applyStatusBar() {
+    const result = await setStatusBarVisible(view.opts.showStatusBar);
+    view.statusHidden = result === 'ok' && !view.opts.showStatusBar;
+    return result;
+  }
+
+  async function applyOrientation() {
+    const result = await setOrientation(view.opts.orientation);
+    view.orientationLocked = result === 'ok' && view.opts.orientation !== 'auto';
+    return result;
+  }
+
+  function applyDeviceOptions() {
+    // Only touch the system when the person asked for something other than the defaults.
+    if (!view.opts.showStatusBar) applyStatusBar();
+    if (view.opts.orientation !== 'auto') applyOrientation();
+    setVolumeCapture(view.opts.volumeKeys, chapterId);
+    startClock();
+  }
+
+  async function toggleOption(key) {
+    const name = TOGGLES[key];
+    if (!name) return;
+    view.opts[name] = !view.opts[name];
+    onSetting?.(key, view.opts[name]);
+    if (key === 'readerShowStatusBar') {
+      const result = await applyStatusBar();
+      if (result === 'unavailable') toast('Hiding the status bar needs the Android app.');
+    } else if (key === 'readerShowClock') startClock();
+    else if (key === 'readerVolumeKeys') {
+      setVolumeCapture(view.opts.volumeKeys, chapterId);
+      if (view.opts.volumeKeys && !isApp) toast('Volume keys only work in the Android app.');
+    } else if (key === 'readerSkipExtras') refreshFoot();
+    renderOverlays();
+  }
+
+  async function setOrientationOption(mode) {
+    if (!['auto', 'portrait', 'landscape'].includes(mode)) return;
+    view.opts.orientation = mode;
+    onSetting?.('readerOrientation', mode);
+    const result = await applyOrientation();
+    if (result === 'unavailable') toast('Screen rotation needs the Android app.');
+    else if (result === 'failed') toast('The screen could not be rotated.');
+    renderOverlays();
+  }
+
+  async function share() {
+    const label = `${context?.title || 'Manga'} - ${chapterLabel(current)}`;
+    const result = await shareLink({ title: label, url: sourceUrl });
+    if (result === 'copied') toast('Link copied.');
+    else if (result === 'failed') toast('The link could not be shared.');
+  }
+
+  function closeTips() {
+    view.tips = false;
+    markTipsSeen();
+    renderOverlays();
   }
 
   // ---- events --------------------------------------------------------------------------
   function handleClick(event) {
     const control = event.target.closest('[data-reader]');
     if (control) {
+      const value = control.dataset.value;
       switch (control.dataset.reader) {
         case 'close': onClose(); break;
         case 'retry': start(); break;
         case 'retry-image': retryImage(Number(control.dataset.index)); break;
-        case 'mode': cycleMode(); break;
-        case 'quality': toggleQuality(); break;
-        case 'next-chapter': if (nextChapter) onOpenChapter(nextChapter.id); break;
-        case 'prev-chapter': if (prevChapter) onOpenChapter(prevChapter.id); break;
+        case 'sheet-open': view.sheetOpen = true; renderOverlays(); break;
+        case 'sheet-close': view.sheetOpen = false; renderOverlays(); break;
+        case 'set-mode': setMode(value); break;
+        case 'set-quality': setQuality(value); break;
+        case 'set-orientation': setOrientationOption(value); break;
+        case 'toggle': toggleOption(control.dataset.key); break;
+        case 'auto-toggle': if (auto.on) stopAuto(); else startAuto(); break;
+        case 'auto-pause': setAutoPaused(!auto.paused); break;
+        case 'auto-stop': stopAuto(); break;
+        case 'share': share(); break;
+        case 'show-tips': view.sheetOpen = false; view.tips = true; renderOverlays(); break;
+        case 'tips-done': closeTips(); break;
+        case 'more-settings': onOpenSettings?.(); break;
+        case 'next-chapter': { const next = nextChapter(); if (next) onOpenChapter(next.id); break; }
+        case 'prev-chapter': { const prev = prevChapter(); if (prev) onOpenChapter(prev.id); break; }
         default: break;
       }
       return;
@@ -365,7 +637,15 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   }
 
   function handleInput(event) {
-    if (event.target.dataset?.reader !== 'seek') return;
+    const kind = event.target.dataset?.reader;
+    if (kind === 'auto-speed') {
+      view.opts.autoSpeed = autoSpeed(event.target.value).id;
+      const label = host.querySelector('.reader-speed-label');
+      if (label) label.textContent = `Speed: ${autoSpeed(view.opts.autoSpeed).label}`;
+      scheduleAuto();
+      return;
+    }
+    if (kind !== 'seek') return;
     const index = Number(event.target.value) - 1;
     if (view.mode === 'scroll') {
       view.page = clampPage(index, view.total);
@@ -380,18 +660,47 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     }
   }
 
+  // Save the auto read speed once the slider is released, not on every tick of the drag.
+  function handleChange(event) {
+    if (event.target.dataset?.reader === 'auto-speed') onSetting?.('readerAutoSpeed', view.opts.autoSpeed);
+  }
+
+  // Touching or wheeling the page while it scrolls itself pauses auto read; the pill resumes it.
+  function handleUserScroll(event) {
+    if (auto.on && !auto.paused && view.mode === 'scroll' && event.target.closest?.('.reader-stage')) setAutoPaused(true);
+  }
+
   function handleKey(event) {
     if (event.target.matches?.('input, textarea, select')) return;
-    if (event.key === 'Escape') { onClose(); return; }
+    if (event.key === 'Escape') {
+      if (view.tips) closeTips();
+      else if (view.sheetOpen) { view.sheetOpen = false; renderOverlays(); } else onClose();
+      return;
+    }
+    if (view.opts.volumeKeys) {
+      const action = volumeAction(event.key);
+      if (action) { event.preventDefault(); step(action === 'next' ? 1 : -1); return; }
+    }
     if (view.mode === 'scroll') return;
     if (event.key === 'ArrowLeft') { event.preventDefault(); goPaged(forwardDelta('left')); }
     else if (event.key === 'ArrowRight') { event.preventDefault(); goPaged(forwardDelta('right')); }
     else if (event.key === ' ') { event.preventDefault(); goPaged(1); }
   }
 
+  // Sent by the Android shell while the reader address carries vol=1 (see scripts/android-customize.sh).
+  function handleVolumeEvent(event) {
+    if (!view.opts.volumeKeys) return;
+    const action = volumeAction(event.detail);
+    if (action) step(action === 'next' ? 1 : -1);
+  }
+
   host.addEventListener('click', handleClick);
   host.addEventListener('input', handleInput);
+  host.addEventListener('change', handleChange);
+  host.addEventListener('touchstart', handleUserScroll, { passive: true });
+  host.addEventListener('wheel', handleUserScroll, { passive: true });
   document.addEventListener('keydown', handleKey);
+  window.addEventListener('tmlvolume', handleVolumeEvent);
   const timer = window.setInterval(() => { if (document.visibilityState === 'visible') view.activeSeconds += 1; }, 1000);
 
   async function start() {
@@ -402,20 +711,19 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       // Resume unless the chapter was already finished; a finished chapter reopens at page one.
       view.page = saved && saved.readingState !== 'completed' ? clampPage(saved.page, view.total) : 0;
       if (view.destroyed) return;
+      if (!tipsSeen()) view.tips = true;
       render();
-      if (view.page > 0) {
-        const note = document.createElement('div');
-        note.className = 'reader-toast';
-        note.textContent = `Resumed at page ${view.page + 1}`;
-        host.appendChild(note);
-        window.setTimeout(() => note.remove(), 2200);
-      }
+      const parts = [];
+      if (view.opts.chapterNotice) parts.push(chapterLabel(current));
+      if (view.page > 0) parts.push(`resumed at page ${view.page + 1}`);
+      if (parts.length) { const text = parts.join(' · '); toast(text.charAt(0).toUpperCase() + text.slice(1), 3000); }
     } catch (error) {
       if (view.destroyed || error?.name === 'AbortError') return;
       showError(error);
     }
   }
 
+  applyDeviceOptions();
   start();
 
   return {
@@ -423,14 +731,23 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       if (view.destroyed) return;
       view.destroyed = true;
       controller.abort();
+      haltAutoLoops();
       teardownObservers();
       for (const objectUrl of blobUrls.values()) URL.revokeObjectURL(objectUrl);
       blobUrls.clear();
       window.clearInterval(timer);
+      window.clearInterval(view.clockTimer);
       window.clearTimeout(view.saveTimer);
       host.removeEventListener('click', handleClick);
       host.removeEventListener('input', handleInput);
+      host.removeEventListener('change', handleChange);
+      host.removeEventListener('touchstart', handleUserScroll);
+      host.removeEventListener('wheel', handleUserScroll);
       document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('tmlvolume', handleVolumeEvent);
+      // Give the phone back the way we found it.
+      if (view.statusHidden) setStatusBarVisible(true);
+      if (view.orientationLocked) setOrientation('auto');
       if (view.total > 0) saveChapterProgress({ chapterId, contentItemId, page: view.page, total: view.total }).catch(() => {});
       recordReadingSession({ chapterId, contentItemId, startedAt: view.startedAt, activeSeconds: view.activeSeconds }).catch(() => {});
     }

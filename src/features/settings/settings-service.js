@@ -12,11 +12,18 @@ export const DEFAULT_SETTINGS = Object.freeze({
   readerMode: 'scroll',
   readerFit: 'width',
   readerQuality: 'data',
+  readerOrientation: 'auto',
+  readerAutoSpeed: '3',
+  readerShowStatusBar: true,
+  readerShowClock: false,
+  readerVolumeKeys: false,
+  readerChapterNotice: false,
+  readerSkipExtras: false,
   anilistClientId: '',
   anilistPushEnabled: false
 });
 
-const BOOLEAN_KEYS = new Set(['adultContentEnabled', 'reducedMotion', 'enableOnlineSearch', 'anilistPushEnabled']);
+const BOOLEAN_KEYS = new Set(['adultContentEnabled', 'reducedMotion', 'enableOnlineSearch', 'anilistPushEnabled', 'readerShowStatusBar', 'readerShowClock', 'readerVolumeKeys', 'readerChapterNotice', 'readerSkipExtras']);
 
 // Allowed values for every select setting come from the schema, so the UI and validation cannot drift apart.
 function allowedValues(key) {

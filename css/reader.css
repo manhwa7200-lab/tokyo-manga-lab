@@ -42,3 +42,38 @@ body[data-route="read"] .app-view { padding: 0; max-width: none; }
 .chapter-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .chapter-read { min-height: 34px; padding: 0 16px; font-size: .78rem; }
 @media (prefers-reduced-motion: reduce) { .reader * { scroll-behavior: auto !important; transition: none !important; } }
+
+/* ---- Reader options: overlays, sheet, switches --------------------------------------------- */
+.reader-overlays { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.reader-overlays > * { pointer-events: auto; }
+.reader-clock { position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 10px; padding: 3px 9px; border-radius: 999px; background: #000a; color: #e8e4f4; font-size: .7rem; font-variant-numeric: tabular-nums; pointer-events: none; }
+.reader-bar:not([hidden]) ~ .reader-overlays .reader-clock { top: calc(70px + env(safe-area-inset-top)); }
+.reader-auto { position: absolute; left: 50%; bottom: calc(88px + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 999px; background: #0d0b16ee; box-shadow: 0 6px 24px #0008; }
+.reader-auto .button, .reader-auto .button-subtle { min-height: 36px; padding: 0 14px; font-size: .78rem; white-space: nowrap; }
+
+.reader-sheet-backdrop { position: absolute; inset: 0; background: #0009; }
+.reader-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 82%; display: flex; flex-direction: column; border-radius: 22px 22px 0 0; background: #15121f; color: #f3f0fa; box-shadow: 0 -10px 40px #000a; padding-bottom: env(safe-area-inset-bottom); }
+.reader-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 14px var(--gutter) 8px; }
+.reader-sheet-body { overflow: auto; padding: 4px var(--gutter) 18px; display: grid; gap: 16px; overscroll-behavior: contain; }
+.reader-group { display: grid; gap: 8px; }
+.reader-group-label { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: #9f98b8; }
+.reader-segs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.reader-seg { min-height: 44px; padding: 6px 8px; border: 1px solid #2c2740; border-radius: 12px; background: #1e1a2d; color: inherit; font: inherit; font-size: .78rem; display: grid; justify-items: center; gap: 2px; cursor: pointer; }
+.reader-seg.is-on { border-color: var(--accent, #e879b9); background: #2c1d33; color: #fff; }
+.reader-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.reader-row-text { min-width: 0; display: grid; gap: 2px; }
+.reader-row-text strong { font-size: .86rem; }
+.reader-row-text small { font-size: .72rem; color: #9f98b8; }
+.reader-switch { flex: 0 0 auto; width: 46px; height: 28px; padding: 3px; border: 0; border-radius: 999px; background: #3a3550; cursor: pointer; transition: background .15s; }
+.reader-switch span { display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.reader-switch[aria-checked="true"] { background: var(--accent, #e879b9); }
+.reader-switch[aria-checked="true"] span { transform: translateX(18px); }
+.reader-range { width: 100%; accent-color: var(--accent, #e879b9); }
+.reader-actions { gap: 0; border-top: 1px solid #2c2740; }
+.reader-action { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 0 2px; border: 0; border-bottom: 1px solid #2c2740; background: none; color: inherit; font: inherit; font-size: .88rem; cursor: pointer; text-align: left; }
+
+.reader-tips { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--gutter); background: #000b; }
+.reader-tips-card { width: min(420px, 100%); display: grid; gap: 12px; padding: 20px; border-radius: 20px; background: #15121f; color: #f3f0fa; }
+.reader-tips-card h3 { margin: 0; }
+.reader-tips-card ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: .86rem; color: #d6d0e6; }
+@media (prefers-reduced-motion: reduce) { .reader-switch, .reader-switch span { transition: none; } }

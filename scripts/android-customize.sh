@@ -66,3 +66,47 @@ open(path, "w", encoding="utf-8").write(text)
 print("Added tokyomangalab://anilist-auth intent filter")
 PY
 grep -q 'android:scheme="tokyomangalab"' "$MANIFEST" || { echo "ERROR: AniList intent filter missing after edit"; exit 1; }
+
+# --- Reader: volume keys turn pages ------------------------------------------------------------
+# The web app puts "vol=1" in the reader address (#read/<id>?vol=1) while the reader option is on. Only then does
+# the app intercept the volume keys and pass them to the page; everywhere else volume works normally.
+MAIN=$(find android/app/src/main/java -name MainActivity.java | head -n 1)
+if [ -n "$MAIN" ]; then
+python3 - "$MAIN" <<'PY'
+import re, sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+if "tmlvolume" in text:
+    print("Volume-key hook already present")
+    sys.exit(0)
+pattern = re.compile(r"public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{\s*\}")
+if not pattern.search(text):
+    print("WARN: MainActivity has an unexpected shape; volume-key paging will not be available in this build")
+    sys.exit(0)
+body = """public class MainActivity extends BridgeActivity {
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        int code = event.getKeyCode();
+        if ((code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) && getBridge() != null) {
+            WebView webView = getBridge().getWebView();
+            String url = webView != null ? webView.getUrl() : null;
+            if (url != null && url.contains("#read/") && url.contains("vol=1")) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    String direction = code == KeyEvent.KEYCODE_VOLUME_UP ? "up" : "down";
+                    webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('tmlvolume',{detail:'" + direction + "'}))", null);
+                }
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+}"""
+text = pattern.sub(lambda m: body, text, count=1)
+text = text.replace("import com.getcapacitor.BridgeActivity;", "import android.view.KeyEvent;\nimport android.webkit.WebView;\nimport com.getcapacitor.BridgeActivity;", 1)
+open(path, "w", encoding="utf-8").write(text)
+print("Added volume-key hook to MainActivity")
+PY
+  grep -q "tmlvolume" "$MAIN" && echo "Volume-key hook present" || echo "WARN: volume-key hook missing after edit"
+else
+  echo "WARN: MainActivity.java not found; volume-key paging will not be available in this build"
+fi

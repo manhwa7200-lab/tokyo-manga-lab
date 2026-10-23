@@ -20,6 +20,7 @@ import { PROFILE_GROUPS, plannedProfileRows } from './features/profile/profile-s
 import { featuresFor } from './features/feature-registry.js';
 import { mountReader, renderReaderShell } from './features/reader/reader-view.js';
 import { isChapterId, normalizePagesPayload } from './features/reader/reader-pages.js';
+import { resetTips } from './features/reader/reader-features.js';
 import { ANILIST_TOKEN_DEFAULT_TTL_SECONDS, AUTH_ATTEMPT_MAX_AGE_MS, DEFAULT_ANILIST_CLIENT_ID } from './features/anilist/anilist-config.js';
 import { buildAuthorizeUrl, looksLikeToken, parseAuthRedirect } from './features/anilist/anilist-auth.js';
 import { clearAuthAttempt, getAccount, getAuthAttempt, markAuthAttempt } from './features/anilist/anilist-store.js';
@@ -93,6 +94,7 @@ function mountCurrentReader() {
       return normalizePagesPayload(await adapter.chapterPages(id, { signal }));
     },
     onClose: closeReader,
+    onOpenSettings: () => { window.location.hash = '#settings/reading'; },
     onOpenChapter: id => { window.location.replace(`#read/${id}`); },
     onSetting: async (key, value) => {
       try { await saveSetting(key, value); state.settings = { ...state.settings, [key]: value }; }
@@ -118,7 +120,7 @@ function startReading(chapterId) {
     .map(chapter => {
       const volume = chapter.volumeNumber ? `Vol. ${chapter.volumeNumber} · ` : '';
       const number = chapter.chapterNumber !== null && chapter.chapterNumber !== '' ? `Chapter ${chapter.chapterNumber}` : 'Extra / oneshot';
-      return { id: chapter.externalId, label: `${volume}${number}${chapter.title ? ` — ${chapter.title}` : ''}`, pages: chapter.pages, groups: chapter.scanlationGroups || [] };
+      return { id: chapter.externalId, number: chapter.chapterNumber ?? null, label: `${volume}${number}${chapter.title ? ` — ${chapter.title}` : ''}`, pages: chapter.pages, groups: chapter.scanlationGroups || [] };
     });
   state.readerContext = { contentItemId: item?.id || null, title: item?.title || 'Reading', chapters };
   storeReaderContext(state.readerContext);
@@ -901,6 +903,7 @@ async function handleAction(action, target) {
     case 'details': openDetails(id); break;
     case 'close-details': closeDetails(); break;
     case 'read-chapter': startReading(target.dataset.chapterId); break;
+    case 'reader-tips-reset': resetTips(); toast('The reader tips will show next time you open a chapter.'); break;
     case 'chapter-page-back': { const item = currentDetailsItem(); if (item?.externalId && state.detailsChapterPagination.page > 1) await loadDetailsChapters(item.externalId, state.detailsChapterPagination.page - 1); break; }
     case 'chapter-page-next': { const item = currentDetailsItem(); if (item?.externalId && state.detailsChapterPagination.hasNext) await loadDetailsChapters(item.externalId, state.detailsChapterPagination.page + 1); break; }
     case 'retry-search': await loadSearch(state.query, state.page); break;
