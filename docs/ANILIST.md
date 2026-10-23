@@ -35,4 +35,4 @@ If you are not sent back to the app, use **Paste a token instead** and paste an 
 - Not tested against the live AniList service from the build environment. The first real sync on your phone is the real test.
 
 ## Worker update (optional, needs your approval to deploy)
-`worker/src/index.js` now passes `anilistId` and `malId` through from MangaDex. To use it, update the deployed Worker. Check the Worker name in the Cloudflare dashboard first (the app uses `tokyo-manga-lab-api2.workers.dev`, but `worker/wrangler.toml` says `tokyo-manga-lab-api`), then paste the new file into that Worker's code editor and deploy.
+`worker/src/index.js` now passes `anilistId` and `malId` through from MangaDex. To use it, update the deployed Worker. The Worker is named `tokyo-manga-lab-api2` (the app uses `tokyo-manga-lab-api2.haribp720.workers.dev`), and `worker/wrangler.toml` now says the same. Paste the new file into that Worker's code editor and deploy.

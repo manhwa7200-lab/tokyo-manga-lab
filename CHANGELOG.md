@@ -58,3 +58,4 @@
 - The link is a separate `sourceEntries` row (no schema change). AniList description and artwork are kept; MangaDex only fills blanks. Chapter availability comes from the linked MangaDex record.
 - Change or unlink from the title sheet. New `docs/LINKING.md`, 14 unit tests and an end-to-end test.
 - Service worker cache bumped to `v8`.
+- `worker/wrangler.toml` name corrected from `tokyo-manga-lab-api` to `tokyo-manga-lab-api2` so it matches the live Worker. Nothing was deployed.
