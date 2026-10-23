@@ -1,4 +1,5 @@
-name = "tokyo-manga-lab-api"
+# Matches the live Worker serving https://tokyo-manga-lab-api2.haribp720.workers.dev (confirmed in the Cloudflare dashboard).
+name = "tokyo-manga-lab-api2"
 main = "src/index.js"
 compatibility_date = "2026-10-20"
 
