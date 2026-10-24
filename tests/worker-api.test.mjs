@@ -330,3 +330,16 @@ test('chapter pages follow the gate and the blocked-tag rule', async t => {
   mockFetch(t, url => url.pathname.startsWith('/at-home') ? jsonResponse(atHomeBody()) : jsonResponse(withParent('erotica', [LOLI_TAG])));
   assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages?adult=1`, { origin: '' }))).status, 404);
 });
+
+test('a client that sends too many requests is told to wait, other clients are unaffected, health stays open', async t => {
+  mockFetch(t, async () => jsonResponse({ data: [], total: 0 }));
+  const from = ip => new Request('https://worker.test/manga?q=a', { headers: { Origin: 'https://tokyo720022-create.github.io', 'CF-Connecting-IP': ip } });
+  let last;
+  for (let i = 0; i < 121; i += 1) last = await worker.fetch(from('203.0.113.7'));
+  assert.equal(last.status, 429);
+  assert.ok(Number(last.headers.get('Retry-After')) >= 1);
+  assert.equal((await last.json()).error.code, 'RATE_LIMITED');
+  assert.equal((await worker.fetch(from('203.0.113.8'))).status, 200);
+  const health = await worker.fetch(new Request('https://worker.test/health', { headers: { 'CF-Connecting-IP': '203.0.113.7' } }));
+  assert.equal(health.status, 200);
+});

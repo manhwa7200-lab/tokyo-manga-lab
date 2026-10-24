@@ -56,6 +56,9 @@ test('progress state and page clamping', () => {
   assert.equal(progressState(4, 10), 'in-progress');
   assert.equal(progressState(9, 10), 'completed');
   assert.equal(progressState(0, 0), 'not-started');
+  assert.equal(progressState(0, 1), 'in-progress', 'opening a one-page chapter does not finish it');
+  assert.equal(progressState(0, 1, true), 'completed', 'reaching the end card does');
+  assert.equal(progressState(1, 2), 'completed');
   assert.equal(clampPage(99, 10), 9);
   assert.equal(clampPage(-3, 10), 0);
   assert.equal(clampPage('x', 10), 0);

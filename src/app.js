@@ -18,6 +18,7 @@ import { getDashboardStatistics } from './features/statistics/statistics-service
 import { escapeHtml, formatDate, slug, truncate } from './shared/utils.js';
 import { hydrateIcons, icon } from './shared/icons.js';
 import { APP_VERSION } from './shared/app-info.js';
+import { coverVariants, retryUrl, safeCoverUrl } from './shared/covers.js';
 import { CHAPTER_LANGUAGES, SETTINGS_CATEGORIES, findCategory } from './features/settings/settings-schema.js';
 import { PROFILE_GROUPS, plannedProfileRows } from './features/profile/profile-sections.js';
 import { featuresFor } from './features/feature-registry.js';
@@ -151,10 +152,31 @@ function setConnectionStatus(status, label) {
   el.innerHTML = `<span class="status-dot"></span><span class="status-text">${escapeHtml(label)}</span>`;
 }
 
-// Replace broken remote covers with a local visual fallback without blocking the card.
+// A cover that fails gets one more try (a changed address, in case the network blinked), then the other known cover
+// (for a linked title: the MangaDex/AniList one), and only then the local placeholder.
+document.addEventListener('load', event => {
+  const img = event.target;
+  if (img instanceof HTMLImageElement && img.hasAttribute('data-cover-fallback')) img.removeAttribute('data-cover-loading');
+}, true);
+
 document.addEventListener('error', event => {
   const img = event.target;
   if (!(img instanceof HTMLImageElement) || !img.hasAttribute('data-cover-fallback') || img.dataset.fallbackDone === '1') return;
+  const stage = Number(img.dataset.coverStage || 0);
+  if (stage === 0) {
+    img.dataset.coverStage = '1';
+    img.removeAttribute('srcset');
+    try { img.src = retryUrl(img.currentSrc || img.src); return; } catch { /* fall through to the next step */ }
+  }
+  if (stage <= 1) {
+    const alt = safeCoverUrl(img.dataset.coverAlt);
+    if (alt && img.dataset.coverAltTried !== '1') {
+      img.dataset.coverAltTried = '1';
+      img.dataset.coverStage = '2';
+      img.src = alt;
+      return;
+    }
+  }
   img.dataset.fallbackDone = '1';
   const title = img.dataset.coverFallback || 'Cover unavailable';
   const fallback = document.createElement('div');
@@ -174,10 +196,13 @@ function titleAuthor(item) {
   return (item.authors || []).join(', ') || 'Unknown creator';
 }
 
-function coverMarkup(item, compact = false) {
-  const cover = item.coverUrl;
-  if (cover) {
-    return `<img ${compact ? 'class="library-cover"' : ''} loading="lazy" alt="Cover of ${escapeHtml(item.title)}" src="${escapeHtml(cover)}" data-cover-fallback="${escapeHtml(item.title)}">`;
+function coverMarkup(item, compact = false, altCover = null) {
+  const variants = coverVariants(item.coverUrl);
+  if (variants) {
+    const alt = safeCoverUrl(altCover);
+    const altAttr = alt && alt !== variants.src ? ` data-cover-alt="${escapeHtml(alt)}"` : '';
+    const sizes = variants.srcset && !compact ? ` srcset="${escapeHtml(variants.srcset)}" sizes="(min-width: 820px) 180px, (min-width: 560px) 30vw, 46vw"` : '';
+    return `<img ${compact ? 'class="library-cover"' : ''} loading="lazy" decoding="async" alt="Cover of ${escapeHtml(item.title)}" src="${escapeHtml(variants.src)}"${sizes}${altAttr} data-cover-loading data-cover-fallback="${escapeHtml(item.title)}">`;
   }
   if (compact) return `<div class="library-cover library-cover-fallback">漫</div>`;
   const titleInitial = Array.from(item.title || '漫')[0];
@@ -344,12 +369,12 @@ async function renderLibrary() {
 async function renderDownloads() {
   const rows = await (await import('./data/database.js')).getAllRecords('downloadJobs');
   const info = [
-    { icon: 'download', title: 'Offline chapters', description: 'The catalogue API provides metadata only, so there is nothing to download yet.', planned: true },
-    { icon: 'database', title: 'Local storage', description: 'Downloaded pages and imported files will be tracked apart from catalogue data.' },
+    { icon: 'download', title: 'Offline chapters', description: 'Chapters are read straight from MangaDex and are not saved on this device. Offline reading is planned but not available yet.', planned: true },
+    { icon: 'database', title: 'Local storage', description: 'Your library, progress and settings live in this device\'s database. Cover images are cached by the app so they load faster.' },
     { icon: 'clock', title: 'Download queue', description: `${rows.length} task${rows.length === 1 ? '' : 's'} recorded on this device.` }
   ];
   return `<section>
-    <div class="page-head"><div><h1>Downloads</h1><p>Offline reading, when sources allow it.</p></div></div>
+    <div class="page-head"><div><h1>Downloads</h1><p>Offline reading is not available yet.</p></div></div>
     <div class="group">${info.map(row => listRow(row)).join('')}</div>
     ${rows.length ? `<h2 class="group-title">Tasks</h2><div class="library-list">${rows.map(job => `<div class="library-card"><div class="library-cover library-cover-fallback">${icon('download')}</div><div class="library-info"><h3>${escapeHtml(job.status || 'Task')}</h3><p>${escapeHtml(job.lastError || 'Download task')}</p><span class="pill-label">${Number(job.bytesDownloaded || 0).toLocaleString()} bytes</span></div></div>`).join('')}</div>` : renderEmpty('Nothing downloaded yet', 'Download status and storage use will show here.')}
     ${renderRoadmap('downloads')}
@@ -357,7 +382,7 @@ async function renderDownloads() {
 }
 
 function chartMarkup(stats) {
-  if (!stats.hasReadingSessions) return `<div class="chart-empty">Reading activity charts will begin tracking actual reading sessions after the chapter reader is connected. Library changes are not counted as reading time.</div>`;
+  if (!stats.hasReadingSessions) return `<div class="chart-empty">Your last seven days of reading will show up here once you read a chapter. Library changes are not counted as reading time.</div>`;
   const max = Math.max(1, ...stats.daily.map(day => day.sessions));
   return `<div class="chart" role="img" aria-label="Reading sessions over the last seven days">${stats.daily.map(day => `<div class="chart-column"><span class="bar-value">${day.sessions}</span><div class="bar" style="height:${Math.max(3, day.sessions / max * 88)}px"></div><small>${escapeHtml(day.label)}</small></div>`).join('')}</div>`;
 }
@@ -373,7 +398,7 @@ async function renderProfile() {
     ${renderStats(stats)}
     ${groups}
     <h2 class="group-title">Reading activity</h2>
-    <div class="group"><div class="surface-pad">${chartMarkup(stats)}<div class="divider"></div><p style="margin:0;font-size:.8rem">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of active reading. Time only counts once the reader is connected.</p></div></div>
+    <div class="group"><div class="surface-pad">${chartMarkup(stats)}<div class="divider"></div><p style="margin:0;font-size:.8rem">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of active reading. Only time spent in the chapter reader counts.</p></div></div>
     <h2 class="group-title">Coming later</h2>
     <div class="group">${planned}</div>
     <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)}</p>
@@ -669,7 +694,7 @@ function renderDetailsContent(rawItem) {
   else if (!state.detailsChapters.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters in this result.</strong><span>Try another language or open the source page.</span></div>';
   const pagination = state.detailsChapterPagination;
   const pagesMarkup = pagination.total > pagination.limit ? `<div class="page-controls chapter-pager"><button class="button" data-action="chapter-page-back" ${pagination.page <= 1 ? 'disabled' : ''}>‹ Previous</button><div class="page-count"><strong>Page ${pagination.page}</strong>${Number(pagination.total).toLocaleString()} chapters</div><button class="button" data-action="chapter-page-next" ${!pagination.hasNext ? 'disabled' : ''}>Next ›</button></div>` : '';
-  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div>${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
+  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item, false, state.detailsLink?.fallback?.coverUrl)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div>${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
 }
 
 
@@ -1004,14 +1029,14 @@ async function uploadBackupFile(file) {
   if (!file) return;
   if (file.size > 25 * 1024 * 1024) throw new Error('Backup is larger than 25 MB. For safety, import a smaller metadata backup.');
   const data = JSON.parse(await file.text());
-  if (!window.confirm('Merge this Tokyo Manga Lab backup into the current local database? Existing records with matching IDs may be updated.')) return;
-  await importBackup(data);
+  if (!window.confirm('Merge this Tokyo Manga Lab backup into this device? Items that are newer here are kept.')) return;
+  const summary = await importBackup(data);
   await refreshLibraryIndex();
   state.settings = await loadSettings();
   configureAdult(state.settings.adultContentEnabled);
   applyTheme();
   await app.navigate(app.currentRoute());
-  toast('Backup imported. Check your library and settings.');
+  toast(summary.keptNewer ? `Backup imported. ${summary.keptNewer} newer item${summary.keptNewer === 1 ? '' : 's'} on this device ${summary.keptNewer === 1 ? 'was' : 'were'} kept.` : 'Backup imported. Check your library and settings.');
 }
 
 function applyTheme() {
@@ -1226,7 +1251,7 @@ async function initialize() {
     }
     if (state.settings.anilistPushEnabled && state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message));
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-      navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Offline app-shell registration skipped:', error));
+      navigator.serviceWorker.register(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`).catch(error => console.warn('Offline app-shell registration skipped:', error));
     }
   } catch (error) {
     console.error('Tokyo Manga Lab initialization failed:', error);

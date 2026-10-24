@@ -46,8 +46,7 @@ The old `mangadex-live.js` prototype is no longer used and is removed by the imp
 
 ## Current limits
 
-This is the first implementation slice, not the entire long-term roadmap. In particular, it does not yet provide an in-app chapter reader or chapter-content endpoints, novel imports, online novel connectors, login/cloud sync, author submissions, payments/donations, or an Android APK. These remain staged features in the approved plan. Chapter content is not fetched or mirrored by the Worker.
-
-Local data is stored in IndexedDB for this browser origin. JSON backup contains metadata and reading records; it does not package imported book files, cover binaries, or downloaded chapter assets. Always export a backup before clearing browser storage.
-
-GitHub Pages is a static frontend host and should remain a neutral, non-explicit demo. Do not host explicit content or build an explicit-content service on GitHub Pages; assess host/provider terms and local law before future distribution.
+- Chapters are read from MangaDex through the in-app reader; nothing is downloaded or stored, and the Worker never mirrors chapter pages. Offline chapter downloads are not available.
+- MangaDex is the only manga source. AniList is for tracking and metadata only. Other sources go through `docs/ADULT-SOURCES.md` and `docs/SOURCE-REVIEW.md` first.
+- There are no Tokyo Manga Lab accounts or cloud sync. Backups are files you save yourself.
+- Novel imports and author submissions are not built.

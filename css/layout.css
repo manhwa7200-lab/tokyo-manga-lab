@@ -7,7 +7,7 @@
   background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; }
-.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 11px; background: var(--accent); color: var(--accent-ink); font-size: 18px; font-weight: 900; }
+.brand-mark { display: block; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; object-fit: cover; background: #09080f; }
 .brand-copy { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
 .brand-copy strong { font-size: 1rem; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
 .brand-copy small { display: none; }

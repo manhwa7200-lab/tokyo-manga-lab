@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https://tokyo-manga-lab-api2.haribp720.workers.dev https://graphql.anilist.co https://api.mangadex.network; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#09080f">
   <meta name="description" content="Tokyo Manga Lab — your manga library, your rules.">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./assets/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
   <link rel="stylesheet" href="./css/base.css">
   <link rel="stylesheet" href="./css/theme.css">
   <link rel="stylesheet" href="./css/layout.css">
@@ -19,7 +21,7 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="#home" aria-label="Tokyo Manga Lab home">
-        <span class="brand-mark" aria-hidden="true">東</span>
+        <img class="brand-mark" src="./assets/logo-96.png" width="34" height="34" alt="" decoding="async">
         <span class="brand-copy"><strong>Tokyo Manga Lab</strong><small>Your manga. Your world.</small></span>
       </a>
       <div class="topbar-actions">

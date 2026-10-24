@@ -70,3 +70,17 @@
 - Smaller: bigger tap targets, higher contrast for faint text, collections chosen in an in-app sheet instead of a prompt box, `npm run check` finds every file itself (and fails if the offline cache misses a module), `DELETE-FILES.txt` support in the import script, `mangadex-live.js` queued for removal, Worker User-Agent version.
 - Service worker cache bumped to `v9`.
 
+
+## 0.9.2 - Covers, logo, hardening
+- **New logo** used as the Android app icon, header mark, browser favicon and home-screen icons (192, 512 and Apple touch PNGs, plus a maskable entry in the manifest).
+- **Covers:** MangaDex covers load a sharper 512 version on high-density screens, show a loading shimmer (still when reduced motion is on), retry once if the network blinks, fall back to the other known cover for linked titles, and then to the local placeholder. Covers are cached in a separate cache that survives app updates and is trimmed to 400 images. The cover-size setting now also applies to the Home rails and the Library list.
+- **Security:** a Content-Security-Policy limits scripts, connections and objects to what the app uses. Cover addresses are only accepted from `uploads.mangadex.org` and `*.anilist.co` over https, so an imported backup cannot make the app load images from elsewhere.
+- **Offline cache:** the shell cache is named after the app version (`sw.js?v=<version>`), so a release can no longer leave an old cache behind by forgetting to bump a number.
+- **Backups merge instead of overwrite:** importing keeps whichever copy is newer, includes AniList sync links, and says how many items were kept because they are newer on this device.
+- Chapter progress: a one-page chapter is finished only when you reach its end card. A saved title no longer loses its description or cover when a later catalogue response comes back with blanks.
+- Errors: a catalogue outage that returns a web page instead of JSON now gives the friendly "temporarily unavailable" message. A blocked database upgrade (another tab still open) no longer hangs the app.
+- Worker: best-effort per-IP rate limit (120 requests per minute per Worker instance, `/health` exempt). Redeploy the Worker to get it.
+- Text that described an older build (cloud sync, "after the reader is connected", Downloads) was rewritten to match what the app does now.
+- Build: `docs/workflows/build-apk.yml` uses `npm ci` when a `package-lock.json` exists and uploads the generated lockfile as an artifact when it does not. `docs/workflows/ci.yml` gains a browser-test job.
+- Tests: the browser suites now live in `tests/e2e/` (`python3 tests/e2e/run.py`) and also fail on any Content-Security-Policy violation. 116 unit tests.
+- **Comick** was reviewed as a second manga source and **not added**; see `docs/SOURCE-REVIEW.md`.

@@ -28,7 +28,24 @@ jobs:
           java-version: 21
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        # With a package-lock.json in the repo the exact tested versions are installed (npm ci).
+        # Without one, npm install resolves fresh versions and the lock it writes is saved as an artifact below,
+        # so you can download it and commit it to make later builds repeatable.
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "No package-lock.json in the repository - resolving versions fresh."
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Save the generated lockfile
+        if: hashFiles('package-lock.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+          if-no-files-found: ignore
 
       - name: Syntax checks and tests
         run: |

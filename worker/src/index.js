@@ -31,6 +31,25 @@ function hasBlockedTag(item) {
     BLOCKED_TAG_IDS.includes(tag?.id) || Object.values(tag?.attributes?.name || {}).some(name => BLOCKED_TAG_NAMES.has(String(name).trim().toLowerCase())));
 }
 
+// Best-effort per-client limit (per Worker instance, keyed by Cloudflare's client IP header). It slows casual abuse of this
+// public endpoint; it is not authentication. For a hard limit add a Cloudflare rate-limiting rule (see docs/api-contracts.md).
+const RATE_WINDOW_MS = 60000;
+const RATE_MAX_REQUESTS = 120;
+const rateBuckets = new Map();
+
+function retryAfterSeconds(request, now = Date.now()) {
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (!ip) return 0;
+  if (rateBuckets.size > 5000) {
+    for (const [key, bucket] of rateBuckets) if (now - bucket.start >= RATE_WINDOW_MS) rateBuckets.delete(key);
+    if (rateBuckets.size > 5000) rateBuckets.clear();
+  }
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || now - bucket.start >= RATE_WINDOW_MS) { bucket = { start: now, count: 0 }; rateBuckets.set(ip, bucket); }
+  bucket.count += 1;
+  return bucket.count > RATE_MAX_REQUESTS ? Math.max(1, Math.ceil((bucket.start + RATE_WINDOW_MS - now) / 1000)) : 0;
+}
+
 function isAllowedOrigin(origin) {
   return !origin || ALLOWED_DEV_ORIGINS.has(origin);
 }
@@ -431,6 +450,10 @@ export default {
     if (!isAllowedOrigin(origin)) return json({ error: "Origin not allowed." }, 403, origin);
     if (request.method !== "GET") return json({ error: "Only GET requests are supported." }, 405, origin, { Allow: "GET, OPTIONS" });
 
+    if (url.pathname !== "/health") {
+      const wait = retryAfterSeconds(request);
+      if (wait) return apiError("RATE_LIMITED", "Too many requests. Please wait a moment and retry.", origin, 429, { "Retry-After": String(wait), "Cache-Control": "no-store" });
+    }
     if (url.pathname === "/health") {
       return json({ ok: true, service: "Tokyo Manga Lab MangaDex catalogue proxy", contentRatings: SAFE_RATINGS, apiVersion: "1" }, 200, origin);
     }

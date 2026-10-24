@@ -1,5 +1,6 @@
 import { deleteRecord, getAllRecords, getByIndex, getRecord, putMany, putRecord } from '../database.js';
 import { normalizeContentItem } from '../models.js';
+import { BACKUP_STORES, rowsToImport } from '../backup-merge.js';
 
 const LOCAL_PROFILE_ID = 'local-default';
 const makeId = () => globalThis.crypto?.randomUUID ? crypto.randomUUID() : `tml-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
@@ -22,6 +23,15 @@ export async function cacheCatalogueItems(items) {
     const existing = await getRecord('contentItems', item.id);
     item.createdAt = existing?.createdAt || item.createdAt;
     item.updatedAt = now;
+    // A later response that leaves a field empty must not wipe something we already have (a cover, a synopsis, credits).
+    if (existing) {
+      if (!item.description && existing.description) item.description = existing.description;
+      if (!item.coverUrl && existing.coverUrl) item.coverUrl = existing.coverUrl;
+      if (!item.authors.length && existing.authors?.length) item.authors = existing.authors;
+      if (!item.artists.length && existing.artists?.length) item.artists = existing.artists;
+      if (!item.tags.length && existing.tags?.length) { item.tags = existing.tags; item.genres = item.genres.length ? item.genres : existing.genres || []; }
+      if (!item.alternateTitles.length && existing.alternateTitles?.length) item.alternateTitles = existing.alternateTitles;
+    }
     contentItems.push(item);
     if (item.sourceId && item.externalId) {
       sourceEntries.push({
@@ -154,24 +164,30 @@ export async function getCollectionLibraryItems(collectionId) {
 }
 
 export async function exportBackup() {
-  const storeNames = ['contentItems','sourceEntries','libraryEntries','collections','collectionItems','readingProgress','chapterProgress','bookmarks','localFiles','appSettings','sourceSettings','readingSessions','activityEvents'];
   const stores = {};
-  for (const name of storeNames) stores[name] = await getAllRecords(name);
+  for (const name of BACKUP_STORES) stores[name] = await getAllRecords(name);
   return { app: 'Tokyo Manga Lab', formatVersion: 1, exportedAt: new Date().toISOString(), stores };
 }
 
+// Merges a backup into this device. Rows that are newer here are kept, so importing an old backup cannot undo recent changes.
+// Returns how many rows were written and how many were kept because the local copy was newer.
 export async function importBackup(backup) {
   if (!backup || backup.app !== 'Tokyo Manga Lab' || backup.formatVersion !== 1 || !backup.stores || typeof backup.stores !== 'object') {
     throw new Error('This is not a supported Tokyo Manga Lab backup.');
   }
-  const allowedStores = ['contentItems','sourceEntries','libraryEntries','collections','collectionItems','readingProgress','chapterProgress','bookmarks','localFiles','appSettings','sourceSettings','readingSessions','activityEvents'];
-  for (const name of allowedStores) {
+  for (const name of BACKUP_STORES) {
     const rows = backup.stores[name];
     if (rows === undefined) continue;
     if (!Array.isArray(rows) || rows.length > 100000) throw new Error(`Backup store ${name} has an invalid format.`);
   }
-  for (const name of allowedStores) {
+  const summary = { written: 0, keptNewer: 0 };
+  for (const name of BACKUP_STORES) {
     const rows = backup.stores[name];
-    if (Array.isArray(rows) && rows.length) await putMany(name, rows);
+    if (!Array.isArray(rows) || !rows.length) continue;
+    const { write, skipped } = rowsToImport(name, rows, await getAllRecords(name));
+    if (write.length) await putMany(name, write);
+    summary.written += write.length;
+    summary.keptNewer += skipped;
   }
+  return summary;
 }
