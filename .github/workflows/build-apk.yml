@@ -6,7 +6,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: write   # only used to attach the APK to a Release when you push a v* tag
 
 jobs:
   apk:
@@ -49,6 +49,18 @@ jobs:
       - name: Sync web assets into Android project
         run: npx cap sync android
 
+      - name: Use the saved signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            printf '%s' "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Using the saved signing key, so this APK installs over older builds."
+          else
+            echo "::warning::No ANDROID_DEBUG_KEYSTORE_BASE64 secret found. This APK gets a new random signing key, so Android will refuse to install it over an older build. See docs/SIGNING.md."
+          fi
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
@@ -59,6 +71,11 @@ jobs:
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk "dist/Tokyo-Manga-Lab-${VERSION_NAME}-debug.apk"
           ls -lh dist
+
+      - name: Show the signing fingerprint
+        run: |
+          echo "If this SHA-256 is the same as the previous build, the APK installs as an update."
+          keytool -printcert -jarfile dist/*.apk | grep -E "SHA256|Owner" || true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
