@@ -164,7 +164,7 @@ async function fetchMangaDex(path, params = {}, { cache = true } = {}) {
     const response = await fetch(url.toString(), {
       headers: {
         Accept: "application/json",
-        "User-Agent": "TokyoMangaLab/0.4.0 (catalogue metadata connector)"
+        "User-Agent": "TokyoMangaLab/0.9 (catalogue metadata connector)"
       },
       signal: controller.signal,
       cf: cache ? { cacheTtl: 120, cacheEverything: true } : { cacheTtl: 0, cacheEverything: false }
@@ -255,7 +255,10 @@ async function doChapterList(id, page, language, allowAdult = false) {
     ["offset", (page - 1) * PAGE_SIZE],
     ["order[chapter]", "desc"],
     ...allowedRatings(allowAdult).map(rating => ["contentRating[]", rating]),
-    ["includes[]", "scanlation_group"]
+    ["includes[]", "scanlation_group"],
+    // Chapters hosted on other sites (for example MangaPlus) and chapters with no pages cannot be read here.
+    ["includeExternalUrl", "0"],
+    ["includeEmptyPages", "0"]
   ];
   if (language !== "all") params.push(["translatedLanguage[]", language]);
   const payload = await fetchMangaDex(`/manga/${encodeURIComponent(id)}/feed`, params);

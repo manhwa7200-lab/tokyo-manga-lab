@@ -10,7 +10,7 @@
 .button-primary:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
 .button-subtle { background: var(--accent-soft); color: var(--accent); }
 .button-danger { background: #ff8fa81c; color: var(--danger); }
-.button-small { min-height: 34px; padding: 0 12px; border-radius: 10px; font-size: .78rem; }
+.button-small { min-height: 40px; padding: 0 12px; border-radius: 10px; font-size: .78rem; }
 .button:disabled, .button-primary:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 .icon-button { width: 38px; min-height: 38px; padding: 0; border-radius: 50%; background: var(--surface); color: var(--muted); }
 .mini-link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
@@ -118,3 +118,12 @@ a.row:active, button.row:active { background: var(--raised); }
 .poster-link { grid-row: span 1; padding: 0; border: 0; background: none; align-self: start; }
 .row-trail .text-field { width: 132px; min-height: 40px; border-radius: 12px; font-size: .86rem; }
 .row-trail .button-danger { background: #ff8fa81c; color: var(--danger); }
+
+/* Touch targets: keep the look, grow the area you can hit (about 44px on touch screens). */
+.card-save::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; }
+@media (pointer: coarse) { .button-small { min-height: 44px; } }
+.sheet-label { margin: 16px 0 8px; font-size: .8rem; color: var(--muted); font-weight: 650; }
+.sheet-list { display: grid; gap: 8px; }
+.sheet-row { width: 100%; min-height: 48px; text-align: left; border-radius: var(--radius-m); background: var(--surface); border: 0; }
+.sheet-form { display: grid; gap: 10px; }
+.sheet-error { min-height: 1.2em; margin: 0; color: var(--danger); font-size: .78rem; }

@@ -54,6 +54,10 @@
     <button class="dialog-close" type="button" data-action="close-details" aria-label="Close details">×</button>
     <div id="detailsContent"></div>
   </dialog>
+  <dialog id="sheetDialog" class="details-dialog sheet-dialog" aria-labelledby="sheetTitle">
+    <button class="dialog-close" type="button" data-action="sheet-close" aria-label="Close">×</button>
+    <div id="sheetContent"></div>
+  </dialog>
   <input id="backupFileInput" type="file" accept="application/json,.json" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="./src/app.js"></script>

@@ -116,6 +116,8 @@ test('chapter route returns paginated metadata and canonical source links, not c
     if (url.pathname === `/manga/${MANGA_ID}`) return jsonResponse({ data: sampleManga() });
     assert.equal(url.pathname, `/manga/${MANGA_ID}/feed`);
     assert.equal(url.searchParams.get('translatedLanguage[]'), 'en');
+    assert.equal(url.searchParams.get('includeExternalUrl'), '0', 'chapters hosted on other sites are not listed');
+    assert.equal(url.searchParams.get('includeEmptyPages'), '0', 'chapters with no pages are not listed');
     return jsonResponse({ data: [sampleChapter()], total: 1, limit: 24, offset: 0 });
   });
   const response = await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}/chapters?page=1&language=en`));

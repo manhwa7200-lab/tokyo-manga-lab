@@ -34,7 +34,7 @@ Then open `http://localhost:8000` from the project directory. On Android/Termux,
 3. Commit/push using your normal workflow only after the local preview is checked. The Worker source is a separate deployment; review `DEPLOY-ON-ANDROID.md` and verify the configured Worker name before running Wrangler.
 4. Wait for the GitHub Pages action/deployment to finish before testing the live site.
 
-The existing `mangadex-live.js` file may remain in the repository, but the new `index.html` does not load it. Do not delete it until you have confirmed the new build works.
+The old `mangadex-live.js` prototype is no longer used and is removed by the import that carries `DELETE-FILES.txt`.
 
 ## API notes
 

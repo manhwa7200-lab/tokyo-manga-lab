@@ -59,3 +59,14 @@
 - Change or unlink from the title sheet. New `docs/LINKING.md`, 14 unit tests and an end-to-end test.
 - Service worker cache bumped to `v8`.
 - `worker/wrangler.toml` name corrected from `tokyo-manga-lab-api` to `tokyo-manga-lab-api2` so it matches the live Worker. Nothing was deployed.
+
+## 0.9.1 - Bug-fix round
+- Search: typing no longer loses focus. Only the results area redraws.
+- Title sheet: it now has its own history entry, so the Android Back button and Esc close it instead of changing the page behind it. Back from the reader returns to the page the sheet was opened from.
+- Adult-rated titles are hidden from the Library and Home while the preference is off (or in the web build). They stay saved on this device, and the Library says how many are hidden.
+- Chapter lists skip chapters hosted on other sites and chapters with no pages (Worker change: `includeExternalUrl=0`, `includeEmptyPages=0`). Redeploy the Worker to get this.
+- Export backup works in the Android app: the file goes to the share sheet (needs `@capacitor/filesystem` and `@capacitor/share`).
+- APK signing: the build can use one saved key (`ANDROID_DEBUG_KEYSTORE_BASE64`) so updates install over older builds. See `docs/SIGNING.md`; the workflow file is in `docs/workflows/` and must be pasted into `.github/workflows/` by hand.
+- Smaller: bigger tap targets, higher contrast for faint text, collections chosen in an in-app sheet instead of a prompt box, `npm run check` finds every file itself (and fails if the offline cache misses a module), `DELETE-FILES.txt` support in the import script, `mangadex-live.js` queued for removal, Worker User-Agent version.
+- Service worker cache bumped to `v9`.
+
