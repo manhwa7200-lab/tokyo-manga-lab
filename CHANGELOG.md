@@ -84,3 +84,10 @@
 - Build: `docs/workflows/build-apk.yml` uses `npm ci` when a `package-lock.json` exists and uploads the generated lockfile as an artifact when it does not. `docs/workflows/ci.yml` gains a browser-test job.
 - Tests: the browser suites now live in `tests/e2e/` (`python3 tests/e2e/run.py`) and also fail on any Content-Security-Policy violation. 116 unit tests.
 - **Comick** was reviewed as a second manga source and **not added**; see `docs/SOURCE-REVIEW.md`.
+
+## 0.9.3 - Optional AniList login, one tap
+- AniList sign-in now works the way other AniList apps do: the app can ship with its own public app ID, so people tap **Log in with AniList** instead of creating an app and pasting an ID. Set it once in `src/features/anilist/anilist-config.js` (`DEFAULT_ANILIST_CLIENT_ID`); see `docs/ANILIST.md`. Until it is set, the app explains this and still lets people paste their own ID or a token.
+- New **Connect AniList** card on Profile: says it is optional, says the app works fully without it, reminds people to check the address says anilist.co, and offers **Log in**, **Register** (anilist.co/signup) and **Not now**. The choice is remembered. Once connected the card shows the account and a Sync button.
+- Settings > Account and sync: the client ID box is now "Use my own AniList app ID (advanced)"; new **Create an AniList account** and **Manage access on AniList** rows. A typed ID wins over the built-in one.
+- Nothing is gated behind a login. A returning sign-in link is still accepted only right after sign-in was started in the app.
+- Tests: 122 unit tests; new browser suite `login_card_e2e.py` (9 suites in all).

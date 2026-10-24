@@ -2,14 +2,21 @@
 
 Tokyo Manga Lab can sign in to your AniList account, bring your manga list into your library, and save status changes back to AniList.
 
-## One-time setup (about 3 minutes)
+## Signing in
+AniList is **optional**. The app works fully without it, and nothing waits for a sign-in.
+
+In the Android app: **Profile → Connect AniList → Log in with AniList**. AniList opens in the browser, you approve, and you are returned to the app signed in. **Register** opens anilist.co/signup for people without an account, and **Not now** tucks the card away (it stays one tap away on Profile). Check that the address says anilist.co before you type your password. In a web browser one-tap return is not available, so use **Paste a token** in Settings → Account and sync.
+
+Afterwards the app asks whether to also save your status changes on AniList (say yes for two-way sync), then tap **Sync now**.
+
+## One-time setup for the developer (the app ID)
+Like other AniList apps, Tokyo Manga Lab can ship with its own app ID built in, so nobody has to create one. The ID is a public number, not a secret. Until you set it, the app falls back to asking each person for their own.
 1. On anilist.co open **Settings → Developer → Create New Application**.
-2. Name: `Tokyo Manga Lab`. Redirect URL: `tokyomangalab://anilist-auth` (exactly).
-3. Save. Copy the **Client ID** (a number). You do not need the client secret. Never share it.
-4. In the app: **Profile → AniList** (or Settings → Account and sync). Paste the Client ID, then tap **Sign in**.
-5. AniList opens. Tap Approve. You return to the app and see "Connected as your-name".
-6. The app asks whether to also save your changes on AniList. Say yes for two-way sync.
-7. Tap **Sync now**.
+2. Name: `Tokyo Manga Lab`. Redirect URL: `tokyomangalab://anilist-auth` (exactly; it must not be another app's redirect such as `whatnext://auth`).
+3. Save and copy the **Client ID** (a number). You do not need the client secret. Never share it.
+4. In GitHub edit `src/features/anilist/anilist-config.js` and put the number in `DEFAULT_ANILIST_CLIENT_ID = '12345';`. Commit, then build the APK again.
+
+Anyone who wants to use their own app can still paste an ID in Settings → Account and sync (advanced). A typed ID wins over the built-in one.
 
 If you are not sent back to the app, use **Paste a token instead** and paste an AniList access token.
 

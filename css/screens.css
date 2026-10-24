@@ -112,3 +112,17 @@
 .link-banner small { color: var(--muted); font-size: .74rem; overflow-wrap: anywhere; }
 .link-banner-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 420px) { .link-candidate { grid-template-columns: 44px minmax(0, 1fr); } .link-candidate > button { grid-column: 1 / -1; } }
+
+/* Optional AniList sign-in card (Profile and Settings > Account and sync) */
+.login-card { display: grid; gap: 10px; margin: 14px 0; padding: 16px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid var(--line, #ffffff14); }
+.login-card-head { display: flex; gap: 12px; align-items: flex-start; }
+.login-card-head h2 { margin: 0 0 4px; font-size: 1.05rem; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.login-card-head p { margin: 0; color: var(--muted); font-size: .86rem; }
+.login-card-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); }
+.login-card-icon svg { width: 22px; height: 22px; }
+.login-safety, .login-note { margin: 0; padding: 10px 12px; border-radius: var(--radius-m); background: var(--raised); color: var(--muted); font-size: .8rem; }
+.login-safety strong { color: var(--text); }
+.login-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.login-card-actions .button, .login-card-actions .button-primary, .login-card-actions .button-subtle { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.login-card-collapsed { margin: 10px 2px; }
+.link-button { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 650; text-decoration: underline; }
