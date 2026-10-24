@@ -34,9 +34,12 @@ async function getJson(path, params = {}, { signal } = {}) {
   }
   try {
     const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal, cache: 'no-store' });
-    let payload;
+    let payload = null;
     try { payload = await response.json(); }
-    catch { throw new ApiError('The catalogue returned an unreadable response.', { status: response.status, code: 'INVALID_JSON' }); }
+    catch {
+      // An error page that is not JSON (for example a gateway error) still gets the normal friendly message below.
+      if (response.ok) throw new ApiError('The catalogue returned an unreadable response.', { status: response.status, code: 'INVALID_JSON' });
+    }
     if (!response.ok) {
       const code = response.status === 429 ? 'RATE_LIMITED' : response.status >= 500 ? 'UPSTREAM_UNAVAILABLE' : 'REQUEST_FAILED';
       const message = response.status === 429

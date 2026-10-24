@@ -26,6 +26,8 @@
 .library-list { display: grid; gap: 10px; }
 .library-card { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 4px 14px; padding: 12px; border-radius: var(--radius-l); background: var(--surface); }
 .library-cover { width: 62px; height: 90px; object-fit: cover; border-radius: 9px; background: var(--raised); }
+:root[data-cover-size="compact"] .library-card { grid-template-columns: 48px minmax(0, 1fr); padding: 9px 12px; }
+:root[data-cover-size="compact"] .library-card .library-cover { width: 48px; height: 70px; }
 .library-cover-fallback { display: grid; place-items: center; color: var(--accent); font-weight: 900; font-size: 1.3rem; }
 .library-cover-fallback .glyph, .library-cover-fallback strong, .library-cover-fallback small { display: none; }
 .library-info { min-width: 0; align-self: center; }

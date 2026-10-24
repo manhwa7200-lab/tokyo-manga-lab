@@ -61,13 +61,20 @@ export function openDatabase() {
       const meta = event.target.transaction.objectStore('schemaMeta');
       meta.put({ key: 'schemaVersion', value: DB_VERSION, updatedAt: new Date().toISOString() });
     };
+    let abandoned = false;
     request.onsuccess = () => {
       const db = request.result;
+      if (abandoned) { db.close(); return; } // the upgrade finished after we had already reported it as blocked
       db.onversionchange = () => { db.close(); databasePromise = null; };
       resolve(db);
     };
     request.onerror = () => { databasePromise = null; reject(request.error || new Error('Could not open local database.')); };
-    request.onblocked = () => reject(new Error('Database upgrade is blocked by another open tab. Close other Tokyo Manga Lab tabs and retry.'));
+    request.onblocked = () => {
+      // Forget this attempt so the next call tries again once the other tab is closed.
+      abandoned = true;
+      databasePromise = null;
+      reject(new Error('Database upgrade is blocked by another open tab. Close other Tokyo Manga Lab tabs and retry.'));
+    };
   });
   return databasePromise;
 }

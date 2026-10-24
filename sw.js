@@ -1,11 +1,20 @@
-const CACHE_NAME = 'tokyo-manga-lab-shell-v9';
+// The shell cache is named after the app version (app.js registers ./sw.js?v=<version>), so every release gets a
+// fresh cache and old ones are removed on activate. Without a version it falls back to a fixed name.
+const VERSION = (() => {
+  try { return (new URL(self.location.href).searchParams.get('v') || '').replace(/[^0-9A-Za-z._-]/g, '').slice(0, 24); } catch { return ''; }
+})();
+const CACHE_NAME = `tokyo-manga-lab-shell-${VERSION || 'dev'}`;
+// Covers live in their own cache that survives app updates, so artwork is not downloaded again after each release.
+const COVER_CACHE = 'tokyo-manga-lab-covers-v1';
+const COVER_LIMIT = 400;
+const COVER_HOSTS = [/^uploads\.mangadex\.org$/, /^s\d+\.anilist\.co$/];
 const APP_SHELL = [
-  './', './index.html', './manifest.webmanifest', './assets/favicon.svg',
+  './', './index.html', './manifest.webmanifest', './assets/favicon.svg', './assets/icon-192.png', './assets/icon-512.png', './assets/apple-touch-icon.png', './assets/logo-96.png',
   './css/base.css', './css/theme.css', './css/layout.css', './css/components.css', './css/screens.css', './css/reader.css',
   './src/app.js', './src/core/app-controller.js', './src/core/router.js',
-  './src/data/database.js', './src/data/models.js', './src/data/repositories/library-repository.js',
+  './src/data/database.js', './src/data/models.js', './src/data/backup-merge.js', './src/data/repositories/library-repository.js',
   './src/services/api-client.js', './src/sources/source-registry.js', './src/sources/manga/mangadex-adapter.js',
-  './src/features/anilist/anilist-config.js', './src/features/anilist/anilist-mapper.js', './src/features/anilist/anilist-auth.js', './src/features/anilist/anilist-client.js', './src/features/anilist/sync-planner.js', './src/features/anilist/anilist-store.js', './src/features/anilist/anilist-sync.js', './src/features/anilist/anilist-native.js', './src/features/reader/reader-pages.js', './src/features/reader/reader-report.js', './src/features/reader/reader-progress.js', './src/features/reader/reader-native.js', './src/features/reader/reader-features.js', './src/features/reader/reader-view.js', './src/features/linking/mangadex-link.js', './src/features/backup/backup-export.js', './src/data/repositories/link-repository.js', './src/features/settings/settings-service.js', './src/features/settings/settings-schema.js', './src/features/profile/profile-sections.js', './src/features/feature-registry.js', './src/shared/icons.js', './src/shared/app-info.js', './src/features/settings/legacy-migration.js', './src/features/statistics/statistics-service.js', './src/shared/utils.js'
+  './src/features/anilist/anilist-config.js', './src/features/anilist/anilist-mapper.js', './src/features/anilist/anilist-auth.js', './src/features/anilist/anilist-client.js', './src/features/anilist/sync-planner.js', './src/features/anilist/anilist-store.js', './src/features/anilist/anilist-sync.js', './src/features/anilist/anilist-native.js', './src/features/reader/reader-pages.js', './src/features/reader/reader-report.js', './src/features/reader/reader-progress.js', './src/features/reader/reader-native.js', './src/features/reader/reader-features.js', './src/features/reader/reader-view.js', './src/features/linking/mangadex-link.js', './src/features/backup/backup-export.js', './src/data/repositories/link-repository.js', './src/features/settings/settings-service.js', './src/features/settings/settings-schema.js', './src/features/profile/profile-sections.js', './src/features/feature-registry.js', './src/shared/icons.js', './src/shared/app-info.js', './src/features/settings/legacy-migration.js', './src/features/statistics/statistics-service.js', './src/shared/utils.js', './src/shared/covers.js'
 ];
 
 self.addEventListener('install', event => {
@@ -29,7 +38,13 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   const scopeUrl = new URL(self.registration.scope);
-  if (url.origin !== scopeUrl.origin) return; // Never cache the catalogue API or external cover assets here.
+  if (url.origin !== scopeUrl.origin) {
+    // Only cover artwork from the two known hosts is cached. The catalogue API and everything else pass through untouched.
+    if (request.destination === 'image' && url.protocol === 'https:' && COVER_HOSTS.some(host => host.test(url.hostname))) {
+      event.respondWith(coverResponse(request));
+    }
+    return;
+  }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
@@ -58,3 +73,26 @@ self.addEventListener('fetch', event => {
     }
   })());
 });
+
+async function coverResponse(request) {
+  const cache = await caches.open(COVER_CACHE);
+  const cached = await cache.match(request.url);
+  if (cached) return cached;
+  try {
+    // CORS first: that response can be inspected and cached. Opaque responses are never stored (they cannot be checked).
+    const response = await fetch(new Request(request.url, { mode: 'cors', credentials: 'omit' }));
+    if (response.ok && response.type === 'cors') {
+      await cache.put(request.url, response.clone()).catch(() => {});
+      trimCoverCache(cache).catch(() => {});
+    }
+    return response;
+  } catch {
+    try { return await fetch(request); } catch { return Response.error(); }
+  }
+}
+
+async function trimCoverCache(cache) {
+  const keys = await cache.keys();
+  const extra = keys.length - COVER_LIMIT;
+  for (let index = 0; index < extra; index += 1) await cache.delete(keys[index]);
+}

@@ -341,6 +341,8 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   function teardownObservers() {
     view.observer?.disconnect();
     view.loadObserver?.disconnect();
+    view.endObserver?.disconnect();
+    view.endSeen = false;
     view.observer = view.loadObserver = null;
   }
 
@@ -370,6 +372,14 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       if (visible) setPage(Number(visible.target.dataset.index), { fromScroll: true });
     }, { threshold: [0.35, 0.6] });
     host.querySelectorAll('.reader-img').forEach(img => { view.loadObserver.observe(img); view.observer.observe(img); });
+    // Reaching the end card in vertical scroll counts as finishing the chapter, even for a one-page chapter.
+    const endCard = host.querySelector('.reader-end');
+    if (endCard) {
+      view.endObserver = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) { view.endSeen = true; scheduleSave(); }
+      }, { threshold: 0.6 });
+      view.endObserver.observe(endCard);
+    }
     const target = stage.querySelector(`.reader-slot[data-slot="${view.page}"]`);
     if (target && view.page > 0) target.scrollIntoView({ block: 'start' });
   }
@@ -398,7 +408,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   function scheduleSave() {
     window.clearTimeout(view.saveTimer);
     view.saveTimer = window.setTimeout(() => {
-      saveChapterProgress({ chapterId, contentItemId, page: view.page, total: view.total }).catch(error => console.warn('Reading progress not saved:', error));
+      saveChapterProgress({ chapterId, contentItemId, page: view.page, total: view.total, ended: view.ended || view.endSeen }).catch(error => console.warn('Reading progress not saved:', error));
     }, 600);
   }
 
@@ -748,7 +758,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       // Give the phone back the way we found it.
       if (view.statusHidden) setStatusBarVisible(true);
       if (view.orientationLocked) setOrientation('auto');
-      if (view.total > 0) saveChapterProgress({ chapterId, contentItemId, page: view.page, total: view.total }).catch(() => {});
+      if (view.total > 0) saveChapterProgress({ chapterId, contentItemId, page: view.page, total: view.total, ended: view.ended || view.endSeen }).catch(() => {});
       recordReadingSession({ chapterId, contentItemId, startedAt: view.startedAt, activeSeconds: view.activeSeconds }).catch(() => {});
     }
   };

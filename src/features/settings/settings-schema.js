@@ -112,7 +112,7 @@ export const SETTINGS_CATEGORIES = Object.freeze([
     id: 'privacy', title: 'Privacy and data', icon: 'shield', summary: 'What is stored and where',
     groups: [
       { id: 'storage', title: 'On this device', items: [
-        { type: 'info', title: 'Where your data lives', value: 'This device only', description: 'Library, progress and settings are stored locally. There are no accounts and no cloud sync in this build.' },
+        { type: 'info', title: 'Where your data lives', value: 'This device only', description: 'Library, progress and settings are stored locally, and Tokyo Manga Lab has no account of its own. If you connect AniList, progress you choose to sync is sent to AniList, and backups are files you save yourself.' },
         { type: 'planned', id: 'storage-usage', title: 'Storage usage', description: 'See how much space the app uses.' },
         { type: 'planned', id: 'clear-cache', title: 'Clear cached covers', description: 'Free space without touching your library.' }
       ] }
