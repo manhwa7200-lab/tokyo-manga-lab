@@ -8,6 +8,7 @@ import {
 } from './data/repositories/library-repository.js';
 import { getMangaDexLink, findOtherItemsForMangaDex, removeMangaDexLink, saveMangaDexLink } from './data/repositories/link-repository.js';
 import { chapterSourceId, findMangaDexMatch, isLinkableAniListItem, searchCandidates, searchQueriesFor, withFallbackMetadata } from './features/linking/mangadex-link.js';
+import { saveBackupFile } from './features/backup/backup-export.js';
 import { sourceRegistry } from './sources/source-registry.js';
 import { adultActive, configureAdult } from './services/api-client.js';
 import { isNativeApp as runningInApp } from './features/anilist/anilist-native.js';
@@ -36,7 +37,7 @@ const state = {
   library: [], libraryById: new Map(), libraryStatusFilter: 'all', collections: [], selectedCollectionId: '',
   anilist: { account: null, status: { connected: false, expired: false, label: 'Not connected' }, busy: false },
   readerContext: null, readerHandle: null, readerReturnHash: '#library',
-  detailsItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, detailsLink: null, link: { status: 'idle', candidates: [], query: '', message: '', changing: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
+  libraryHiddenCount: 0, detailsItemId: null, detailsHistory: false, sheetItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, detailsLink: null, link: { status: 'idle', candidates: [], query: '', message: '', changing: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
 };
 
 const app = new AppController({
@@ -127,8 +128,11 @@ function startReading(chapterId) {
   state.readerContext = { contentItemId: item?.id || null, title: item?.title || 'Reading', chapters };
   storeReaderContext(state.readerContext);
   state.readerReturnHash = window.location.hash && !window.location.hash.startsWith('#read') ? window.location.hash : '#library';
-  closeDetails();
-  window.location.hash = `#read/${chapterId}`;
+  const hadSheetEntry = state.detailsHistory;
+  closeDetails({ leaving: true });
+  // Replace the sheet's own history entry, so Back from the reader returns to the page the sheet was opened on.
+  if (hadSheetEntry) window.location.replace(`#read/${chapterId}`);
+  else window.location.hash = `#read/${chapterId}`;
 }
 
 function toast(message) {
@@ -258,27 +262,38 @@ function renderStatusBanner() {
   return `<div class="notice ${state.offlineResults ? '' : 'warning'}" role="status"><strong>${state.offlineResults ? 'Offline catalogue mode.' : 'Catalogue note.'}</strong> ${escapeHtml(state.apiError)} <button class="mini-link" data-action="retry-search">Retry</button></div>`;
 }
 
+function homeFreshMarkup() {
+  return `<div class="section-head"><h2>From MangaDex</h2><a class="more" href="#discover">See all${icon('chevronRight', 'icon-sm')}</a></div>${freshBlockMarkup()}${renderStatusBanner()}`;
+}
+
+function freshBlockMarkup() {
+  const fresh = state.results.slice(0, 12);
+  return state.searchLoading && !fresh.length
+    ? '<div class="empty-state"><span class="spinner"></span><strong>Loading catalogue</strong></div>'
+    : fresh.length ? `<div class="rail">${fresh.map(item => renderMangaCard(item)).join('')}</div>` : renderEmpty('Catalogue not loaded', 'Open Discover to try again.');
+}
+
 async function renderHome() {
   await refreshLibraryIndex();
   const stats = await getDashboardStatistics();
   const continuing = state.library.filter(row => row.personalStatus === 'reading').slice(0, 12).map(row => row.item);
-  const fresh = state.results.slice(0, 12);
   const continueBlock = continuing.length
     ? `<div class="rail">${continuing.map(item => renderMangaCard(item)).join('')}</div>`
     : `<div class="shelf-empty">${icon('bookmark')}<p><strong>Nothing in progress</strong>Add a title and mark it as reading to find it here.</p><a class="button-subtle" href="#discover">Discover</a></div>`;
-  const freshBlock = state.searchLoading && !fresh.length
-    ? '<div class="empty-state"><span class="spinner"></span><strong>Loading catalogue</strong></div>'
-    : fresh.length ? `<div class="rail">${fresh.map(item => renderMangaCard(item)).join('')}</div>` : renderEmpty('Catalogue not loaded', 'Open Discover to try again.');
   return `<section>
     <div class="page-head"><div><h1>Home</h1><p>Pick up where you left off.</p></div></div>
     <form class="search-bar" data-form="search"><label class="sr-only" for="homeSearch">Search manga titles</label><input class="field" id="homeSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Search manga" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search</button></form>
     <div class="section-head"><h2>Continue reading</h2><a class="more" href="#library">Library${icon('chevronRight', 'icon-sm')}</a></div>${continueBlock}
-    <div class="section-head"><h2>From MangaDex</h2><a class="more" href="#discover">See all${icon('chevronRight', 'icon-sm')}</a></div>${freshBlock}
+    <div id="homeFresh">${homeFreshMarkup()}</div>
     ${renderStats(stats)}
-    ${renderStatusBanner()}
     ${renderRoadmap('home')}
     <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)} · Tokyo Brotherhood</p>
   </section>`;
+}
+
+function discoverResultsMarkup() {
+  return `<div class="section-head"><div><h2>${state.query ? `Results for “${escapeHtml(state.query)}”` : 'Latest from MangaDex'}</h2><p>${state.offlineResults ? 'Showing cached titles saved on this device.' : `${Number(state.pagination.total).toLocaleString()} titles found`}</p></div><button class="button button-small" data-action="retry-search">Refresh</button></div>
+    ${renderStatusBanner()}${resultsGrid()}${paginationMarkup()}`;
 }
 
 async function renderDiscover() {
@@ -286,8 +301,7 @@ async function renderDiscover() {
   return `<section>
     <div class="page-head"><div><h1>Discover</h1><p>Search the MangaDex catalogue.</p></div></div>
     <div class="search-panel"><form class="search-bar" data-form="search"><label class="sr-only" for="discoverSearch">Search manga titles</label><input class="field" id="discoverSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Title, series or keyword" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search</button></form>${searchControls()}<p class="search-note">Genre chips filter the results already loaded on this page.</p></div>
-    <div class="section-head"><div><h2>${state.query ? `Results for “${escapeHtml(state.query)}”` : 'Latest from MangaDex'}</h2><p>${state.offlineResults ? 'Showing cached titles saved on this device.' : `${Number(state.pagination.total).toLocaleString()} titles found`}</p></div><button class="button button-small" data-action="retry-search">Refresh</button></div>
-    ${renderStatusBanner()}${resultsGrid()}${paginationMarkup()}
+    <div id="discoverResults">${discoverResultsMarkup()}</div>
     ${renderRoadmap('discover')}
     <p class="footer-note">Metadata, covers and chapter pages belong to their sources and creators.</p>
   </section>`;
@@ -322,6 +336,7 @@ async function renderLibrary() {
     <div class="toolbar"><label class="sr-only" for="statusFilter">Filter by status</label><select class="select-field" id="statusFilter" data-action="status-filter">${statuses.map(([value, label]) => `<option value="${value}" ${state.libraryStatusFilter === value ? 'selected' : ''}>${label}</option>`).join('')}</select><span class="count">${entries.length} title${entries.length === 1 ? '' : 's'}</span></div>
     ${listMarkup}
     ${renderRoadmap('library')}
+    ${state.libraryHiddenCount ? `<p class="footer-note">${state.libraryHiddenCount} saved title${state.libraryHiddenCount === 1 ? ' is' : 's are'} hidden by your content preference. ${state.libraryHiddenCount === 1 ? 'It stays' : 'They stay'} saved on this device.</p>` : ''}
     <p class="footer-note">Removing a title keeps its cached metadata, bookmarks and imported files.</p>
   </section>`;
 }
@@ -520,6 +535,16 @@ async function renderSettings() {
   return category ? renderSettingsCategory(category) : renderSettingsHome();
 }
 
+// Redraw only the results area so the search box keeps focus (and the keyboard stays open) while typing.
+async function refreshSearchViews() {
+  const route = app.currentRoute();
+  const discover = route === 'discover' && document.getElementById('discoverResults');
+  const home = route === 'home' && document.getElementById('homeFresh');
+  if (discover) { await refreshLibraryIndex(); discover.innerHTML = discoverResultsMarkup(); }
+  else if (home) { await refreshLibraryIndex(); home.innerHTML = homeFreshMarkup(); }
+  else if (['home', 'discover'].includes(route)) await app.navigate(route);
+}
+
 async function loadSearch(query = state.query, page = 1) {
   const sequence = ++state.searchSequence;
   if (state.searchController) state.searchController.abort();
@@ -531,7 +556,7 @@ async function loadSearch(query = state.query, page = 1) {
   state.apiError = '';
   state.offlineResults = false;
   state.genre = state.genre || 'all';
-  if (['home', 'discover'].includes(app.currentRoute())) await app.navigate(app.currentRoute());
+  await refreshSearchViews();
   try {
     if (state.settings && !state.settings.enableOnlineSearch) throw new Error('Online search is disabled in Settings. Turn it on to search MangaDex.');
     const result = await sourceRegistry.search('mangadex', state.query, state.page, { signal: state.searchController.signal });
@@ -559,13 +584,17 @@ async function loadSearch(query = state.query, page = 1) {
     if (sequence === state.searchSequence) {
       state.searchLoading = false;
       await refreshLibraryIndex();
-      if (['home', 'discover'].includes(app.currentRoute())) await app.navigate(app.currentRoute());
+      await refreshSearchViews();
     }
   }
 }
 
+// Titles with an adult rating are hidden everywhere while the adult preference is off (or in the web build).
+// They stay saved on this device; they reappear when the preference is turned back on.
 async function refreshLibraryIndex() {
-  state.library = await getLibraryItems();
+  const all = await getLibraryItems();
+  state.library = all.filter(row => isRatingVisible(row.item));
+  state.libraryHiddenCount = all.length - state.library.length;
   state.libraryById = new Map(state.library.map(row => [row.contentItemId, row]));
 }
 
@@ -803,8 +832,11 @@ async function openDetails(contentItemId) {
   state.detailsChapterPagination = { page: 1, limit: 24, total: 0, hasNext: false };
   renderDetailsContent(item);
   const dialog = document.getElementById('detailsDialog');
-  if (!dialog.open && typeof dialog.showModal === 'function') dialog.showModal();
-  else if (!dialog.open) dialog.setAttribute('open', '');
+  if (!dialog.open) {
+    if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
+    // The sheet gets its own history entry, so the Android Back button closes it instead of changing the page behind it.
+    try { window.history.pushState({ tmlDetails: true }, '', window.location.href); state.detailsHistory = true; } catch { state.detailsHistory = false; }
+  }
 
   // An AniList-only title borrows its chapters from a linked MangaDex record (see docs/LINKING.md).
   if (isLinkableAniListItem(item)) {
@@ -863,13 +895,27 @@ async function openDetails(contentItemId) {
   await Promise.allSettled([detailsTask, chaptersTask]);
 }
 
-function closeDetails() {
+function finishCloseDetails() {
   state.detailsSequence += 1;
   state.chapterSequence += 1;
   state.detailsLoading = false;
   state.detailsLoadingChapters = false;
+  state.detailsHistory = false;
   const dialog = document.getElementById('detailsDialog');
-  if (typeof dialog.close === 'function') dialog.close(); else dialog.removeAttribute('open');
+  if (typeof dialog.close === 'function') { if (dialog.open) dialog.close(); } else dialog.removeAttribute('open');
+}
+
+// Close button, backdrop tap and Esc. When the sheet owns a history entry, going back removes it and the popstate handler finishes the job.
+function closeDetails({ leaving = false } = {}) {
+  if (!state.detailsHistory) { finishCloseDetails(); return; }
+  if (leaving) { finishCloseDetails(); return; } // the caller replaces the sheet's history entry itself
+  window.history.back();
+}
+
+function handleDetailsPopState() {
+  const dialog = document.getElementById('detailsDialog');
+  if (state.detailsHistory && dialog?.open) finishCloseDetails();
+  else state.detailsHistory = false;
 }
 
 async function toggleLibrary(itemId) {
@@ -900,51 +946,58 @@ async function markReading(itemId) {
   if (document.getElementById('detailsDialog').open) openDetails(itemId);
 }
 
-async function createNewCollection() {
-  const name = window.prompt('Name your collection (for example, Weekend reads):');
-  if (name === null) return null;
-  const collection = await createCollection(name);
-  state.selectedCollectionId = collection.id;
-  state.collections = await getCollections();
-  await app.navigate('library');
-  toast('Collection created.');
-  return collection;
+// Collections are chosen and named in a small in-app sheet (no typing numbers into a browser prompt box).
+function renderCollectionSheet() {
+  const itemId = state.sheetItemId;
+  const picks = itemId && state.collections.length
+    ? `<h3 class="sheet-label">Add to a collection</h3><div class="sheet-list">${state.collections.map(c => `<button class="row sheet-row" type="button" data-action="collection-add" data-collection-id="${escapeHtml(c.id)}"><span class="row-copy"><strong>${escapeHtml(c.name)}</strong></span></button>`).join('')}</div>`
+    : '';
+  document.getElementById('sheetContent').innerHTML = `<h2 id="sheetTitle">${itemId ? 'Collections' : 'New collection'}</h2>${picks}
+    <form class="sheet-form" data-form="collection-new"><h3 class="sheet-label">${picks ? 'Or start a new one' : 'Name your collection'}</h3><label class="sr-only" for="collectionName">Collection name</label><input class="field" id="collectionName" name="name" type="text" maxlength="80" autocomplete="off" placeholder="For example, Weekend reads" required><p class="sheet-error" id="collectionError" role="alert"></p><button class="button-primary" type="submit">${itemId ? 'Create and add' : 'Create'}</button></form>`;
 }
 
-async function addToCollectionPrompt(contentItemId) {
-  if (!state.collections.length) {
-    const collection = await createNewCollection();
-    if (!collection) return;
-    await addItemToCollection(collection.id, contentItemId);
+async function openCollectionSheet(contentItemId = null) {
+  state.collections = await getCollections();
+  state.sheetItemId = contentItemId;
+  renderCollectionSheet();
+  const dialog = document.getElementById('sheetDialog');
+  if (!dialog.open) { if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', ''); }
+  document.getElementById('collectionName')?.focus();
+}
+
+function closeCollectionSheet() {
+  const dialog = document.getElementById('sheetDialog');
+  if (typeof dialog.close === 'function') { if (dialog.open) dialog.close(); } else dialog.removeAttribute('open');
+}
+
+async function submitNewCollection(form) {
+  const name = String(new FormData(form).get('name') || '');
+  const error = document.getElementById('collectionError');
+  try {
+    const collection = await createCollection(name);
+    if (state.sheetItemId) await addItemToCollection(collection.id, state.sheetItemId);
     state.selectedCollectionId = collection.id;
-    toast(`Created ${collection.name} and added the title.`);
+    state.collections = await getCollections();
+    closeCollectionSheet();
     await app.navigate('library');
-    return;
-  }
-  const choices = state.collections.map((collection, index) => `${index + 1}. ${collection.name}`).join('\n');
-  const raw = window.prompt(`Enter the number of the collection:\n${choices}`);
-  if (raw === null) return;
-  const index = Number(raw) - 1;
-  const collection = state.collections[index];
-  if (!collection) { toast('That collection number is not valid.'); return; }
-  await addItemToCollection(collection.id, contentItemId);
+    toast(state.sheetItemId ? `Created ${collection.name} and added the title.` : 'Collection created.');
+  } catch (caught) { if (error) error.textContent = caught?.message || 'Could not create the collection.'; }
+}
+
+async function addToExistingCollection(collectionId) {
+  const collection = state.collections.find(c => c.id === collectionId);
+  if (!collection || !state.sheetItemId) return;
+  await addItemToCollection(collection.id, state.sheetItemId);
   state.selectedCollectionId = collection.id;
+  closeCollectionSheet();
   toast(`Added to ${collection.name}.`);
   await app.navigate('library');
 }
 
 async function downloadBackup() {
   const backup = await exportBackup();
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `tokyo-manga-lab-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
-  toast('Backup exported. Keep a copy outside this browser.');
+  const result = await saveBackupFile(backup);
+  toast(result === 'shared' ? 'Choose where to save your backup. Keep a copy outside this app.' : 'Backup exported. Keep a copy outside this browser.');
 }
 
 async function uploadBackupFile(file) {
@@ -1055,11 +1108,13 @@ async function handleAction(action, target) {
     case 'genre-filter': state.genre = target.dataset.genre || 'all'; await app.navigate('discover'); break;
     case 'page-back': if (state.page > 1) await loadSearch(state.query, state.page - 1); break;
     case 'page-next': if (state.pagination.hasNext) await loadSearch(state.query, state.page + 1); break;
-    case 'create-collection': await createNewCollection(); break;
+    case 'create-collection': await openCollectionSheet(null); break;
+    case 'sheet-close': closeCollectionSheet(); break;
+    case 'collection-add': await addToExistingCollection(target.dataset.collectionId); break;
     case 'select-collection': state.selectedCollectionId = target.dataset.id || ''; await app.navigate('library'); break;
     case 'favorite': await toggleFavorite(id); await refreshLibraryIndex(); await app.navigate('library'); toast('Favourite updated.'); break;
     case 'remove': if (window.confirm('Remove this title from your library? Cached metadata, imported files and bookmarks will be preserved.')) { await removeFromLibrary(id); await refreshLibraryIndex(); await app.navigate('library'); toast('Removed from your library.'); } break;
-    case 'add-collection': await addToCollectionPrompt(id); break;
+    case 'add-collection': await openCollectionSheet(id); break;
     case 'export-backup': await downloadBackup(); break;
     case 'import-backup': document.getElementById('backupFileInput').click(); break;
     case 'open-settings': window.location.hash = '#settings'; break;
@@ -1085,6 +1140,8 @@ function bindUiEvents() {
   });
 
   document.addEventListener('submit', event => {
+    const collectionForm = event.target.closest('form[data-form="collection-new"]');
+    if (collectionForm) { event.preventDefault(); submitNewCollection(collectionForm); return; }
     const linkForm = event.target.closest('form[data-form="link-search"]');
     if (linkForm) {
       event.preventDefault();
@@ -1131,6 +1188,9 @@ function bindUiEvents() {
   document.getElementById('detailsDialog').addEventListener('click', event => {
     if (event.target === event.currentTarget) closeDetails();
   });
+  // Esc closes through the same path, so the cleanup and the history entry stay in step.
+  document.getElementById('detailsDialog').addEventListener('cancel', event => { event.preventDefault(); closeDetails(); });
+  window.addEventListener('popstate', handleDetailsPopState);
   document.getElementById('backupFileInput').addEventListener('change', async event => {
     const input = event.currentTarget;
     try { await uploadBackupFile(input.files?.[0]); }

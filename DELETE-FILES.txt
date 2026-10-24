@@ -1,0 +1,2 @@
+# Files removed by the next 'Unzip and apply ZIP' run.
+mangadex-live.js   # old one-file prototype, no longer loaded by index.html

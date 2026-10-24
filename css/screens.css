@@ -1,10 +1,10 @@
 /* Page headings */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 10px 0 16px; }
 .page-head p { margin: 0; font-size: .88rem; }
-.back-link { display: inline-flex; align-items: center; gap: 4px; margin: 8px 0 0 -6px; padding: 6px 10px 6px 4px; border-radius: 10px; color: var(--accent); font-weight: 650; font-size: .86rem; }
+.back-link { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: 8px 0 0 -6px; padding: 6px 10px 6px 4px; border-radius: 10px; color: var(--accent); font-weight: 650; font-size: .86rem; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 28px 0 12px; }
 .section-head p { margin: 2px 0 0; font-size: .8rem; }
-.section-head a.more { display: inline-flex; align-items: center; gap: 2px; color: var(--accent); font-size: .82rem; font-weight: 650; white-space: nowrap; }
+.section-head a.more { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 4px; color: var(--accent); font-size: .82rem; font-weight: 650; white-space: nowrap; }
 .footer-note { margin: 30px 0 0; color: var(--faint); font-size: .72rem; text-align: center; }
 
 /* Search */

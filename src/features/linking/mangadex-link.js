@@ -85,7 +85,6 @@ export async function findMangaDexMatch(item, { search, filter = () => true } = 
     } catch (error) {
       failures += 1;
       lastError = error;
-      if (error?.name === 'AbortError') throw error;
       continue;
     }
     mergeUnique(pool, found.filter(filter));
