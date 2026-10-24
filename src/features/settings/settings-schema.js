@@ -123,12 +123,14 @@ export const SETTINGS_CATEGORIES = Object.freeze([
     groups: [
       { id: 'anilist', title: 'AniList', items: [
         { type: 'info', title: 'Account', valueFrom: 'anilistStatus' },
-        { type: 'text', key: 'anilistClientId', title: 'AniList client ID', description: 'Create a free app at anilist.co/settings/developer and set its redirect URL to tokyomangalab://anilist-auth. Then paste the app ID (a number) here.', inputMode: 'numeric', placeholder: 'Number', when: 'anilistDisconnected' },
+        { type: 'text', key: 'anilistClientId', title: 'Use my own AniList app ID (advanced)', description: 'Only needed if this build has none built in, or you want your own. Create a free app at anilist.co/settings/developer, set its redirect URL to tokyomangalab://anilist-auth, then paste the app ID (a number) here.', inputMode: 'numeric', placeholder: 'Number', when: 'anilistDisconnected' },
         { type: 'action', action: 'anilist-connect', title: 'Sign in with AniList', description: 'Opens AniList. Approve access and you return to this app.', button: 'Sign in', when: 'anilistDisconnected' },
         { type: 'action', action: 'anilist-paste-token', title: 'Paste a token instead', description: 'Use this if the sign-in does not return to the app.', button: 'Paste', when: 'anilistDisconnected' },
+        { type: 'action', action: 'anilist-register', title: 'Create an AniList account', description: 'Opens anilist.co in your browser. AniList is free and optional.', button: 'Register', when: 'anilistDisconnected' },
         { type: 'toggle', key: 'anilistPushEnabled', title: 'Send changes to AniList', description: 'When on, status changes you make here are also saved on AniList. Sync never deletes anything on either side.', when: 'anilistConnected' },
         { type: 'action', action: 'anilist-sync', title: 'Sync now', description: 'Bring your AniList manga list in, and send your changes back when that is on.', button: 'Sync', resultId: 'anilistResult', when: 'anilistConnected' },
         { type: 'info', title: 'Last sync', valueFrom: 'anilistLastSync', when: 'anilistConnected' },
+        { type: 'action', action: 'anilist-apps', title: 'Manage access on AniList', description: 'Opens your AniList app permissions, where you can revoke this app completely.', button: 'Open', when: 'anilistConnected' },
         { type: 'action', action: 'anilist-disconnect', title: 'Sign out', description: 'Removes the sign-in from this device. To revoke access completely, remove the app at anilist.co/settings/apps.', button: 'Sign out', danger: true, when: 'anilistConnected' }
       ] },
       { id: 'tokyo-account', title: 'Tokyo Manga Lab account', items: [

@@ -27,6 +27,7 @@ import { isChapterId, normalizePagesPayload } from './features/reader/reader-pag
 import { resetTips } from './features/reader/reader-features.js';
 import { ANILIST_TOKEN_DEFAULT_TTL_SECONDS, AUTH_ATTEMPT_MAX_AGE_MS, DEFAULT_ANILIST_CLIENT_ID } from './features/anilist/anilist-config.js';
 import { buildAuthorizeUrl, looksLikeToken, parseAuthRedirect } from './features/anilist/anilist-auth.js';
+import { ANILIST_APPS_URL, ANILIST_REGISTER_URL, loginAvailability, resolveClientId } from './features/anilist/anilist-login.js';
 import { clearAuthAttempt, getAccount, getAuthAttempt, markAuthAttempt } from './features/anilist/anilist-store.js';
 import { closeAuthPage, isNativeApp, listenForAppLinks, openAuthPage } from './features/anilist/anilist-native.js';
 import { connectWithToken, describeAccount, describeSummary, disconnect as disconnectAniList, flushOutbox, notifyLocalChange, runSync } from './features/anilist/anilist-sync.js';
@@ -395,6 +396,7 @@ async function renderProfile() {
   const planned = plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true, action: 'planned-feature', attrs: `data-title="${escapeHtml(row.title)}"` })).join('');
   return `<section>
     <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p>${state.anilist.status.connected ? `<span class="pill-label accent">${escapeHtml(state.anilist.status.label.replace('Connected as ', 'AniList: '))}</span>` : '<span class="pill-label">No account needed</span>'}</div></div>
+    ${renderAniListCard()}
     ${renderStats(stats)}
     ${groups}
     <h2 class="group-title">Reading activity</h2>
@@ -412,13 +414,44 @@ async function refreshAniList() {
   state.anilist.status = describeAccount(state.anilist.account);
 }
 
-const anilistClientId = () => String(state.settings?.anilistClientId || DEFAULT_ANILIST_CLIENT_ID || '').trim();
+const anilistClientId = () => resolveClientId({ saved: state.settings?.anilistClientId, builtIn: DEFAULT_ANILIST_CLIENT_ID });
+
+// AniList is optional. Nothing in the app waits for it; this card only offers it and explains what it does.
+const CARD_HIDDEN_KEY = 'tml-anilist-card-hidden';
+const anilistCardHidden = () => { try { return localStorage.getItem(CARD_HIDDEN_KEY) === '1'; } catch { return false; } };
+const setAnilistCardHidden = hidden => { try { if (hidden) localStorage.setItem(CARD_HIDDEN_KEY, '1'); else localStorage.removeItem(CARD_HIDDEN_KEY); } catch { /* the choice just is not remembered */ } };
+
+function renderAniListCard() {
+  const status = state.anilist.status;
+  if (status.connected) {
+    return `<section class="login-card is-connected" aria-labelledby="anilistCardTitle"><div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">${escapeHtml(status.label)}</h2><p>Your AniList manga list is linked. Sync brings it in and, if you chose that, sends your changes back.</p></div></div><div class="login-card-actions"><button class="button-primary" type="button" data-action="anilist-sync">Sync now</button><a class="button" href="#settings/account">AniList settings</a></div></section>`;
+  }
+  if (anilistCardHidden()) return `<p class="login-card-collapsed"><button class="link-button" type="button" data-action="anilist-card-show">Connect AniList (optional)</button></p>`;
+  const availability = loginAvailability({ native: isNativeApp(), clientId: anilistClientId() });
+  const note = availability.message ? `<p class="login-note" role="note">${escapeHtml(availability.message)}</p>` : '';
+  const signIn = availability.state === 'ready'
+    ? '<button class="button-primary" type="button" data-action="anilist-connect">Log in with AniList</button>'
+    : availability.state === 'needs-id'
+      ? '<a class="button-primary" href="#settings/account">Add an app ID</a>'
+      : '<button class="button-primary" type="button" data-action="anilist-paste-token">Paste a token</button>';
+  return `<section class="login-card" aria-labelledby="anilistCardTitle">
+    <div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">Connect AniList <span class="pill-label">Optional</span></h2><p>Bring your AniList manga list into your library and keep your progress there. Tokyo Manga Lab works fully without it.</p></div></div>
+    <p class="login-safety">You will go to <strong>anilist.co</strong> to log in or register. Check that the address says anilist.co before you type your password.</p>
+    ${note}
+    <div class="login-card-actions">${signIn}<button class="button" type="button" data-action="anilist-register">Register</button><button class="button-subtle" type="button" data-action="anilist-card-hide">Not now</button></div>
+  </section>`;
+}
 
 async function startAniListSignIn() {
-  if (!isNativeApp()) { toast('One-tap sign-in works in the Android app. In a browser, use "Paste a token instead".'); return; }
+  const availability = loginAvailability({ native: isNativeApp(), clientId: anilistClientId() });
+  if (availability.state !== 'ready') { toast(availability.message); return; }
   const url = buildAuthorizeUrl(anilistClientId());
   await markAuthAttempt();
   await openAuthPage(url);
+}
+
+function openAniListPage(url) {
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 async function finishAniListConnect(tokenInfo) {
@@ -1146,6 +1179,10 @@ async function handleAction(action, target) {
     case 'planned-feature': toast(`${target.dataset.title || 'This feature'} is planned and not available yet.`); break;
     case 'check-api': await checkApi(); break;
     case 'anilist-connect': await startAniListSignIn(); break;
+    case 'anilist-register': openAniListPage(ANILIST_REGISTER_URL); break;
+    case 'anilist-apps': openAniListPage(ANILIST_APPS_URL); break;
+    case 'anilist-card-hide': setAnilistCardHidden(true); await app.navigate('profile'); break;
+    case 'anilist-card-show': setAnilistCardHidden(false); await app.navigate('profile'); break;
     case 'anilist-paste-token': await pasteAniListToken(); break;
     case 'anilist-sync': await syncAniList(); break;
     case 'anilist-disconnect': await signOutAniList(); break;
