@@ -118,3 +118,13 @@
 - **Account and sync page** now reads top to bottom: AniList account (sign in or sync), Tracking, then a collapsed "Advanced sign-in options" holding Paste a token and Use my own app ID. The app-ID field sits full width under its description.
 - Profile: stats come first, the AniList card is shorter, Settings shortcuts are one clear group, planned features are folded away. Downloads no longer lists a planned item among real information. Wide screens show Settings and Profile in one centred column. Section headings are small capitals so headings and rows are easier to tell apart.
 - Every settings key and behaviour is unchanged; no data migration. Tests: 147 unit tests; browser tests updated for the collapsed advanced section.
+
+## 0.9.6 - Opening screen, simpler Profile, steadier connection
+- **Opening screen:** the app logo, name and tagline show for about a second as the app starts (web, installed app and Android). In the Android build the generated launch pictures are replaced by the same logo on the dark background, so there is no white flash. It also goes away by itself if anything fails to start.
+- **Profile is now short:** who you are, your four numbers, the optional AniList card, My library and Downloads, one Settings row, and the seven-day chart once you have read something. Accounts, preferences, backup shortcuts and the planned-feature list moved to Settings (planned features are under Settings > Coming later).
+- **Steadier connection to the catalogue API:**
+  - The app quietly retries a dropped, timed-out or gateway-failed request (up to two more tries with a short wait, and it respects rate limits) before showing an error.
+  - The status pill tells the truth: it goes offline only when requests still fail after retries, and comes back by itself. While offline the app re-checks every 20 seconds (only while it is on screen), straight away when the phone reports it is online or the app returns to the front, and then reloads the search that failed.
+  - The first screen no longer waits for the catalogue; the catalogue fills in when it answers.
+  - **Worker (needs a redeploy):** one quiet retry for a dropped MangaDex connection or a 502/503/504; rate limits and "not found" pass straight through.
+- Tests: 150 unit tests; new browser suite `connection_e2e.py` (11 suites in all).

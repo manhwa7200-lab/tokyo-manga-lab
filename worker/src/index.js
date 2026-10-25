@@ -175,9 +175,7 @@ function validMangaId(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
-async function fetchMangaDex(path, params = {}, { cache = true } = {}) {
-  const url = new URL(API_BASE + path);
-  for (const [key, value] of params) url.searchParams.append(key, String(value));
+async function fetchMangaDexOnce(url, cache) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
@@ -197,6 +195,21 @@ async function fetchMangaDex(path, params = {}, { cache = true } = {}) {
     return await response.json();
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+// One quiet retry for a dropped connection or a gateway error (502/503/504). Anything else, including rate limits and
+// "not found", is passed straight back so the app can show the right message.
+async function fetchMangaDex(path, params = {}, { cache = true } = {}) {
+  const url = new URL(API_BASE + path);
+  for (const [key, value] of params) url.searchParams.append(key, String(value));
+  try {
+    return await fetchMangaDexOnce(url, cache);
+  } catch (error) {
+    const transient = error.status === undefined || error.status === 502 || error.status === 503 || error.status === 504;
+    if (!transient) throw error;
+    await new Promise(resolve => setTimeout(resolve, 350));
+    return fetchMangaDexOnce(url, cache);
   }
 }
 
