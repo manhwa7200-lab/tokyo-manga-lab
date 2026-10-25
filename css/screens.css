@@ -220,3 +220,16 @@ a.row .row-trail { color: var(--faint); }
 .profile-page .login-card { margin: 14px 0 0; }
 .chart-note { margin: 12px 0 0; font-size: .78rem; text-align: center; }
 .profile-page .stat-strip { margin-top: 14px; }
+
+/* Profile when signed in to AniList: banner, avatar, name, totals */
+.profile-hero { position: relative; border-radius: var(--radius-l); overflow: hidden; background: var(--surface); }
+.profile-banner { position: relative; height: 150px; background: linear-gradient(120deg, #3b1d5a, #7a2f63 55%, #1d3a6b); }
+.profile-banner img { width: 100%; height: 100%; object-fit: cover; }
+.profile-banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, #0a09100f 40%, var(--surface) 100%); }
+.profile-hero-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: -46px; padding: 0 16px 18px; text-align: center; }
+.profile-avatar { width: 88px; height: 88px; border-radius: 50%; object-fit: cover; background: var(--raised); border: 3px solid var(--surface); box-shadow: 0 0 0 2px var(--accent); }
+.profile-avatar-fallback { display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-size: 2rem; font-weight: 900; }
+.profile-hero h1 { margin: 6px 0 0; font-size: 1.5rem; overflow-wrap: anywhere; }
+.profile-hero .pill-label { min-height: 28px; text-decoration: none; }
+.profile-bio { margin: 0; padding: 14px 16px; font-size: .86rem; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+#profileAniStats > .stat-strip { margin-top: 14px; }

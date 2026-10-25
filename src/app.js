@@ -36,7 +36,8 @@ import { buildAuthorizeUrl, looksLikeToken, parseAuthRedirect } from './features
 import { ANILIST_APPS_URL, ANILIST_REGISTER_URL, loginAvailability, resolveClientId } from './features/anilist/anilist-login.js';
 import { clearAuthAttempt, getAccount, getAuthAttempt, markAuthAttempt } from './features/anilist/anilist-store.js';
 import { closeAuthPage, isNativeApp, listenForAppLinks, openAuthPage } from './features/anilist/anilist-native.js';
-import { connectWithToken, describeAccount, describeSummary, disconnect as disconnectAniList, flushOutbox, notifyLocalChange, runSync } from './features/anilist/anilist-sync.js';
+import { connectWithToken, describeAccount, describeSummary, disconnect as disconnectAniList, flushOutbox, notifyLocalChange, refreshProfile, runSync } from './features/anilist/anilist-sync.js';
+import { profileIsStale } from './features/anilist/anilist-profile.js';
 
 const root = document.getElementById('appView');
 const state = {
@@ -427,6 +428,55 @@ function chartMarkup(stats) {
   return `<div class="chart" role="img" aria-label="Reading sessions over the last seven days">${stats.daily.map(day => `<div class="chart-column"><span class="bar-value">${day.sessions}</span><div class="bar" style="height:${Math.max(3, day.sessions / max * 88)}px"></div><small>${escapeHtml(day.label)}</small></div>`).join('')}</div>`;
 }
 
+const formatCount = value => (Number(value) || 0).toLocaleString();
+
+// The signed-in person's AniList profile: banner, avatar, name, and AniList's own counts. Shown instead of "Local reader".
+function profileHeroMarkup() {
+  const account = state.anilist.account;
+  const profile = account?.profile;
+  const name = profile?.name || account?.viewer?.name || 'AniList user';
+  const avatar = profile?.avatarUrl || safeCoverUrl(account?.viewer?.avatarUrl);
+  const banner = profile?.bannerUrl;
+  const link = profile?.siteUrl || account?.viewer?.siteUrl || '';
+  const safeLink = /^https:\/\/anilist\.co\//.test(link) ? link : '';
+  const avatarMarkup = avatar ? `<img class="profile-avatar" src="${escapeHtml(avatar)}" alt="" width="88" height="88" decoding="async" referrerpolicy="no-referrer">` : `<span class="profile-avatar profile-avatar-fallback" aria-hidden="true">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
+  return `<div class="profile-hero" id="profileHero">
+    <div class="profile-banner">${banner ? `<img src="${escapeHtml(banner)}" alt="" decoding="async" referrerpolicy="no-referrer">` : ''}</div>
+    <div class="profile-hero-body">${avatarMarkup}<h1>${escapeHtml(name)}</h1>${safeLink ? `<a class="pill-label accent" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">View on AniList ${icon('external', 'icon-sm')}</a>` : '<span class="pill-label accent">AniList</span>'}</div>
+  </div>`;
+}
+
+function profileAniListMarkup() {
+  const profile = state.anilist.account?.profile;
+  if (!profile) return '<div id="profileAniStats"></div>';
+  const cells = [[profile.anime.count, 'Anime'], [profile.manga.count, 'Manga']];
+  if (profile.following !== null) cells.push([profile.following, 'Following']);
+  if (profile.followers !== null) cells.push([profile.followers, 'Followers']);
+  if (cells.length < 4) cells.push([profile.manga.chaptersRead, 'Chapters read']);
+  const rows = [['Chapters read', formatCount(profile.manga.chaptersRead)], ['Volumes read', formatCount(profile.manga.volumesRead)], ['Manga mean score', profile.manga.meanScore ? String(profile.manga.meanScore) : '—']];
+  return `<div id="profileAniStats">
+    <div class="stat-strip" role="list" aria-label="AniList totals">${cells.slice(0, 4).map(([value, label]) => `<div role="listitem"><strong>${formatCount(value)}</strong><span>${label}</span></div>`).join('')}</div>
+    <h2 class="group-title">Manga on AniList</h2>
+    <div class="group">${rows.map(([label, value]) => `<div class="row is-info"><span class="row-copy"><strong>${label}</strong></span><span class="row-trail"><span class="row-value">${escapeHtml(value)}</span></span></div>`).join('')}</div>
+    ${profile.about ? `<h2 class="group-title">Bio</h2><div class="group"><p class="profile-bio">${escapeHtml(profile.about)}</p></div>` : ''}
+  </div>`;
+}
+
+// Fetch a fresh profile in the background; the screen shows the saved one right away and updates in place.
+async function refreshProfileInBackground() {
+  if (!state.anilist.status.connected || !profileIsStale(state.anilist.account?.profile)) return;
+  try {
+    const profile = await refreshProfile();
+    if (!profile) return;
+    state.anilist.account = await getAccount();
+    if (app.currentRoute() !== 'profile') return;
+    const hero = document.getElementById('profileHero');
+    const stats = document.getElementById('profileAniStats');
+    if (hero) hero.outerHTML = profileHeroMarkup();
+    if (stats) stats.outerHTML = profileAniListMarkup();
+  } catch (error) { console.warn('AniList profile not refreshed:', error?.message || error); }
+}
+
 async function renderProfile() {
   const stats = await getDashboardStatistics();
   await refreshAniList();
@@ -436,10 +486,12 @@ async function renderProfile() {
   const activity = stats.hasReadingSessions
     ? `<h2 class="group-title">Last seven days</h2><div class="group"><div class="surface-pad">${chartMarkup(stats)}<p class="chart-note">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of reading</p></div></div>`
     : '';
+  const head = connected
+    ? `${profileHeroMarkup()}${profileAniListMarkup()}${renderAniListCard()}<h2 class="group-title">In this app</h2>${renderStats(stats)}`
+    : `<div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p><span class="pill-label">No account needed</span></div></div>${renderStats(stats)}${renderAniListCard()}`;
+  setTimeout(() => { refreshProfileInBackground(); }, 0);
   return `<section class="narrow profile-page">
-    <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p>${connected ? `<span class="pill-label accent">${escapeHtml(state.anilist.status.label.replace('Connected as ', 'AniList: '))}</span>` : '<span class="pill-label">No account needed</span>'}</div></div>
-    ${renderStats(stats)}
-    ${renderAniListCard()}
+    ${head}
     ${activity}
     ${groups}
     <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)}</p>
@@ -463,7 +515,7 @@ const setAnilistCardHidden = hidden => { try { if (hidden) localStorage.setItem(
 function renderAniListCard() {
   const status = state.anilist.status;
   if (status.connected) {
-    return `<section class="login-card is-connected" aria-labelledby="anilistCardTitle"><div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">${escapeHtml(status.label)}</h2><p>Your manga list is linked. Sync brings it in.</p></div></div><div class="login-card-actions"><button class="button-primary" type="button" data-action="anilist-sync">Sync now</button><a class="button" href="#settings/account">AniList settings</a></div></section>`;
+    return `<section class="login-card is-connected" aria-labelledby="anilistCardTitle"><div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">AniList sync</h2><p>${escapeHtml(dynamicValue('anilistLastSync') === 'Not synced yet' ? 'Not synced yet.' : `Last synced ${dynamicValue('anilistLastSync')}.`)}</p></div></div><div class="login-card-actions"><button class="button-primary" type="button" data-action="anilist-sync">Sync now</button><a class="button" href="#settings/account">AniList settings</a></div></section>`;
   }
   if (anilistCardHidden()) return `<p class="login-card-collapsed"><button class="link-button" type="button" data-action="anilist-card-show">Connect AniList (optional)</button></p>`;
   const availability = loginAvailability({ native: isNativeApp(), clientId: anilistClientId() });

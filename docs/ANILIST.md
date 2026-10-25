@@ -49,3 +49,6 @@ Open a title and tap **Tracking**. Status, chapters read, score and dates are sa
 - **Marked as read:** the same update can run when you mark chapters read yourself (Always, Ask or Never).
 - **Which AniList title:** the stored link, the AniList ID MangaDex lists, or the one you choose by search. Titles are never matched by name automatically.
 - **Library status vs tracking:** these are separate. Tracking changes your AniList entry; the library status still syncs through *Sync now*, which will pull a changed status in.
+
+## Profile (since 0.9.7)
+When you are signed in, the Profile screen shows your AniList banner, avatar, name, totals and bio. The app reads these with one `Viewer` query (`about`, `bannerImage`, `avatar`, `statistics`) and one follower/following query. They are stored with the sign-in on this device (they are not part of backups), refreshed in the background at most every 15 minutes, and removed when you sign out.

@@ -8,6 +8,7 @@ import { planSync } from './sync-planner.js';
 import {
   clearAccount, deleteOutbox, getAccount, getOutbox, getSyncLinks, getTracking, putOutbox, putSyncLinks, putTracking, saveAccount, syncLinkId
 } from './anilist-store.js';
+import { normalizeProfile, profileIsStale } from './anilist-profile.js';
 import { patchIsEmpty, patchToVariables, planAfterRead, toDateText } from '../tracking/tracking.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -17,9 +18,31 @@ export async function connectWithToken({ accessToken, expiresAt }, { fetchImpl }
   const client = createAniListClient({ token: accessToken, fetchImpl });
   const viewer = await client.viewer();
   const previous = await getAccount();
-  const account = { accessToken, expiresAt, viewer, connectedAt: Date.now(), lastSync: previous?.viewer?.id === viewer.id ? previous.lastSync || null : null };
+  const same = previous?.viewer?.id === viewer.id;
+  const account = { accessToken, expiresAt, viewer, connectedAt: Date.now(), lastSync: same ? previous.lastSync || null : null, profile: same ? previous.profile || null : null };
   await saveAccount(account);
   return account;
+}
+
+// Loads the profile shown on the Profile screen and keeps a copy on the account, so it still shows offline.
+// Returns the saved profile (possibly older) when AniList cannot be reached.
+export async function refreshProfile({ fetchImpl, force = false } = {}) {
+  const account = await getAccount();
+  if (!describeAccount(account).connected) return null;
+  if (!force && !profileIsStale(account.profile)) return account.profile;
+  try {
+    const client = createAniListClient({ token: account.accessToken, fetchImpl });
+    const viewer = await client.profile();
+    let social = null;
+    try { social = await client.socialCounts(viewer.id); } catch { social = account.profile ? { followers: account.profile.followers, following: account.profile.following } : null; }
+    const profile = normalizeProfile(viewer, social);
+    const latest = await getAccount();
+    if (latest && latest.viewer?.id === viewer.id) await saveAccount({ ...latest, profile });
+    return profile;
+  } catch (error) {
+    if (error?.code === 'UNAUTHORIZED') throw error;
+    return account.profile || null;
+  }
 }
 
 export async function disconnect() { await clearAccount(); }
