@@ -7,7 +7,7 @@ export const ANILIST_REDIRECT_PROTOCOL = 'tokyomangalab:';
 export const ANILIST_REDIRECT_HOST = 'anilist-auth';
 
 // The client ID is public (not a secret). Leave empty to let each user paste their own in Settings.
-export const DEFAULT_ANILIST_CLIENT_ID = '44302';
+export const DEFAULT_ANILIST_CLIENT_ID = '';
 
 export const AUTH_ATTEMPT_MAX_AGE_MS = 15 * 60 * 1000;
 export const ANILIST_TOKEN_DEFAULT_TTL_SECONDS = 365 * 24 * 60 * 60; // AniList tokens last one year

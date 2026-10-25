@@ -22,8 +22,25 @@ const LIST_QUERY = `query ($userId: Int, $chunk: Int, $perChunk: Int) {
   }
 }`;
 
-const SAVE_MUTATION = `mutation ($mediaId: Int, $status: MediaListStatus) {
-  SaveMediaListEntry(mediaId: $mediaId, status: $status) { id mediaId status progress updatedAt }
+const ENTRY_FIELDS = `id mediaId status progress score(format: POINT_100) startedAt { year month day } completedAt { year month day } updatedAt`;
+
+const SAVE_MUTATION = `mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: Int, $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput) {
+  SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, scoreRaw: $scoreRaw, startedAt: $startedAt, completedAt: $completedAt) { ${ENTRY_FIELDS} }
+}`;
+
+const MEDIA_QUERY = `query ($id: Int) {
+  Media(id: $id, type: MANGA) {
+    id chapters status isAdult siteUrl title { romaji english native } coverImage { medium }
+    mediaListEntry { ${ENTRY_FIELDS} }
+  }
+}`;
+
+const SEARCH_QUERY = `query ($search: String, $isAdult: Boolean) {
+  Page(page: 1, perPage: 10) {
+    media(search: $search, type: MANGA, isAdult: $isAdult, sort: SEARCH_MATCH) {
+      id chapters isAdult format startDate { year } title { romaji english native } coverImage { medium }
+    }
+  }
 }`;
 
 export function createAniListClient({ token, fetchImpl = (...args) => fetch(...args), apiUrl = ANILIST_API_URL, timeoutMs = 25000 } = {}) {
@@ -78,10 +95,26 @@ export function createAniListClient({ token, fetchImpl = (...args) => fetch(...a
       }
       return [...byMedia.values()];
     },
-    async saveEntry({ mediaId, status }) {
-      const saved = (await request(SAVE_MUTATION, { mediaId: Number(mediaId), status })).SaveMediaListEntry;
+    // Saves only the fields given. Leaving a field out keeps its value on AniList.
+    async saveEntry({ mediaId, ...fields }) {
+      const variables = { mediaId: Number(mediaId) };
+      for (const key of ['status', 'progress', 'scoreRaw', 'startedAt', 'completedAt']) if (fields[key] !== undefined) variables[key] = fields[key];
+      const saved = (await request(SAVE_MUTATION, variables)).SaveMediaListEntry;
       if (!saved?.id) throw new AniListError('AniList did not confirm the change.', { code: 'INVALID_RESPONSE' });
       return saved;
+    },
+    // One title with the signed-in person's own list entry (null when it is not on their list).
+    async mediaEntry(mediaId) {
+      const media = (await request(MEDIA_QUERY, { id: Number(mediaId) })).Media;
+      if (!media?.id) throw new AniListError('AniList does not know that title.', { code: 'NOT_FOUND' });
+      return media;
+    },
+    // A title search for the person to choose from. Adult titles only when asked for.
+    async searchManga(query, { allowAdult = false } = {}) {
+      const text = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      if (text.length < 2) return [];
+      const page = (await request(SEARCH_QUERY, { search: text, isAdult: allowAdult ? undefined : false })).Page;
+      return page?.media || [];
     }
   };
 }

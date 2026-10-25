@@ -126,3 +126,57 @@
 .login-card-actions .button, .login-card-actions .button-primary, .login-card-actions .button-subtle { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .login-card-collapsed { margin: 10px 2px; }
 .link-button { min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 650; text-decoration: underline; }
+
+/* Chapter list: toolbar, options sheet, row marks and menu */
+.chapter-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 10px; }
+.chapter-count { font-size: .82rem; color: var(--muted); font-weight: 650; }
+.chapter-tools { display: flex; align-items: center; gap: 8px; }
+.chapter-tools .icon-button.is-active { background: var(--accent-soft); color: var(--accent); }
+.chapter-options { margin: 0 0 12px; border-radius: var(--radius-l); background: var(--raised); overflow: hidden; }
+.opt-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #ffffff14; }
+.opt-tab { min-height: 46px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted); font: inherit; font-weight: 650; }
+.opt-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.opt-body { display: grid; padding: 6px 4px 10px; }
+.opt-row { display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 14px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; width: 100%; }
+.opt-row input[type="checkbox"], .opt-row input[type="radio"] { width: 22px; height: 22px; accent-color: var(--accent); }
+.opt-select { justify-content: space-between; }
+.opt-select .select-field { max-width: 58%; }
+.opt-sort.is-on { color: var(--accent); font-weight: 700; }
+.opt-arrow { display: inline-grid; place-items: center; width: 22px; font-size: 1.15rem; }
+.opt-hint { margin: 2px 16px 0; font-size: .74rem; color: var(--muted); }
+.chapter-row { flex-wrap: wrap; }
+.chapter-row.is-read .chapter-name { color: var(--muted); }
+.chapter-row-main strong { display: flex; align-items: center; gap: 8px; }
+.chapter-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: var(--accent); }
+.chapter-state { width: 9px; flex: 0 0 9px; color: var(--muted); font-size: .8rem; line-height: 1; }
+.chapter-flag { display: inline-grid; width: 16px; color: var(--accent); }
+.chapter-flag svg { width: 16px; height: 16px; }
+.chapter-more { min-width: 44px; min-height: 44px; padding: 0; font-size: 1.2rem; }
+.chapter-menu { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid #ffffff14; }
+.chapter-more-row { display: grid; gap: 8px; margin-top: 12px; }
+.chapter-more-btn { min-height: 44px; }
+
+/* Tracking panel */
+.track-panel { margin: 14px 0; padding: 14px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid #ffffff12; }
+.track-panel h4 { margin: 0 0 4px; }
+.track-card { display: grid; gap: 12px; }
+.track-head { display: flex; align-items: center; gap: 12px; }
+.track-logo { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px; background: #0b1622; color: #3db4f2; font-weight: 900; }
+.track-title { min-width: 0; display: grid; }
+.track-title strong { overflow-wrap: anywhere; }
+.track-title small { color: var(--muted); }
+.track-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.track-cell { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.track-cell > span { font-size: .72rem; color: var(--muted); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
+.track-cell small { color: var(--muted); font-size: .72rem; }
+.track-cell .field, .track-cell .select-field { width: 100%; min-height: 44px; }
+.stepper { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; align-items: center; }
+.stepper .button { min-height: 44px; padding: 0; }
+.stepper .field { text-align: center; }
+.track-note { margin: 0; padding: 8px 12px; border-radius: var(--radius-m); background: var(--raised); font-size: .8rem; color: var(--muted); }
+.track-note.ok { color: #7be0a4; }
+.track-note.queued, .track-note.warn { color: #f2c06b; }
+.track-note.error { color: var(--danger); }
+.track-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.track-find .link-search { display: flex; gap: 8px; margin: 10px 0; }
+.track-find .link-search .field { flex: 1; min-width: 0; }

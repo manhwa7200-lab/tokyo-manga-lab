@@ -32,6 +32,10 @@ export async function saveChapterProgress({ chapterId, contentItemId, page, tota
     updatedAt: new Date().toISOString()
   };
   await putRecord('chapterProgress', record);
+  // Tell the rest of the app the first time a chapter becomes finished (used to update AniList).
+  if (readingState === 'completed' && existing?.readingState !== 'completed' && typeof document !== 'undefined') {
+    try { document.dispatchEvent(new CustomEvent('tml:chapter-read', { detail: { chapterId, contentItemId: contentItemId || null } })); } catch { /* not in a page */ }
+  }
   return record;
 }
 
