@@ -111,3 +111,10 @@
 - If AniList cannot be reached, the change is saved on this device, the panel says so, and it is sent when the phone is back online or the next time the app opens.
 - Browser tests: new `tracking_e2e.py` (10 suites in all). 145 unit tests.
 - Not done: other trackers (MyAnimeList, Kitsu and so on) are listed as planned; chapter downloads (the Downloaded filter) do not exist yet.
+
+## 0.9.5 - Built-in AniList app ID and tidier Settings
+- The app now ships with its AniList app ID (44302), so **Log in with AniList** is one tap in the Android app. The app's Redirect URL on anilist.co must be exactly `tokyomangalab://anilist-auth`. An ID typed in Settings still wins.
+- **Settings reorganised.** Settings home groups categories under App, Accounts and sources, Data and about, with a live value on the right (theme, reading mode, language, AniList state) and a search box that finds any setting. Category pages use a header icon, short one-line descriptions, small "Android app" tags instead of long notes, and one collapsed "Coming later" list at the bottom instead of dimmed planned rows scattered through the page.
+- **Account and sync page** now reads top to bottom: AniList account (sign in or sync), Tracking, then a collapsed "Advanced sign-in options" holding Paste a token and Use my own app ID. The app-ID field sits full width under its description.
+- Profile: stats come first, the AniList card is shorter, Settings shortcuts are one clear group, planned features are folded away. Downloads no longer lists a planned item among real information. Wide screens show Settings and Profile in one centred column. Section headings are small capitals so headings and rows are easier to tell apart.
+- Every settings key and behaviour is unchanged; no data migration. Tests: 147 unit tests; browser tests updated for the collapsed advanced section.
