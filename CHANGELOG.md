@@ -128,3 +128,9 @@
   - The first screen no longer waits for the catalogue; the catalogue fills in when it answers.
   - **Worker (needs a redeploy):** one quiet retry for a dropped MangaDex connection or a 502/503/504; rate limits and "not found" pass straight through.
 - Tests: 150 unit tests; new browser suite `connection_e2e.py` (11 suites in all).
+
+## 0.9.7 - AniList profile on the Profile screen
+- When you are signed in to AniList, Profile shows **your AniList profile** instead of "Local reader": banner, avatar, name, a "View on AniList" link, your anime, manga, following and followers totals, chapters and volumes read, manga mean score, and your bio (as short plain text).
+- It is saved on the device, so it still shows offline, and refreshed in the background at most every 15 minutes. If follower counts cannot be loaded the strip shows chapters read instead. Images are only accepted from AniList's own https image hosts.
+- Your local library numbers stay under "In this app". The sync card now says when you last synced. Signed out, Profile is unchanged.
+- Tests: 154 unit tests; new browser suite `profile_e2e.py` (12 suites in all). Not yet checked against live AniList: the profile and follower queries were written to AniList's documented schema and tested against a mock.

@@ -12,6 +12,14 @@ export class AniListError extends Error {
 
 const VIEWER_QUERY = `query { Viewer { id name siteUrl avatar { medium } } }`;
 
+const PROFILE_QUERY = `query { Viewer { id name siteUrl about bannerImage avatar { large medium }
+  statistics { anime { count episodesWatched meanScore } manga { count chaptersRead volumesRead meanScore } } } }`;
+
+const SOCIAL_QUERY = `query ($userId: Int!) {
+  followers: Page(page: 1, perPage: 1) { pageInfo { total } followers(userId: $userId) { id } }
+  following: Page(page: 1, perPage: 1) { pageInfo { total } following(userId: $userId) { id } }
+}`;
+
 const LIST_QUERY = `query ($userId: Int, $chunk: Int, $perChunk: Int) {
   MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk, forceSingleCompletedList: true) {
     hasNextChunk
@@ -84,6 +92,17 @@ export function createAniListClient({ token, fetchImpl = (...args) => fetch(...a
       const viewer = (await request(VIEWER_QUERY)).Viewer;
       if (!viewer?.id) throw new AniListError('AniList did not return your account.', { code: 'INVALID_RESPONSE' });
       return { id: viewer.id, name: viewer.name, siteUrl: viewer.siteUrl || '', avatarUrl: viewer.avatar?.medium || '' };
+    },
+    // Banner, avatar, bio and counts for the Profile screen.
+    async profile() {
+      const viewer = (await request(PROFILE_QUERY)).Viewer;
+      if (!viewer?.id) throw new AniListError('AniList did not return your profile.', { code: 'INVALID_RESPONSE' });
+      return viewer;
+    },
+    // Follower and following totals. Best effort: the Profile still works without them.
+    async socialCounts(userId) {
+      const data = await request(SOCIAL_QUERY, { userId: Number(userId) });
+      return { followers: data.followers?.pageInfo?.total, following: data.following?.pageInfo?.total };
     },
     // Returns every manga entry once, even if it appears in several custom lists.
     async mangaList(userId) {
