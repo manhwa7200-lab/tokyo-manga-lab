@@ -6,8 +6,9 @@ import { AniListError, createAniListClient } from './anilist-client.js';
 import { normalizeRemoteEntry, toRemoteStatus } from './anilist-mapper.js';
 import { planSync } from './sync-planner.js';
 import {
-  clearAccount, deleteOutbox, getAccount, getOutbox, getSyncLinks, putOutbox, putSyncLinks, saveAccount, syncLinkId
+  clearAccount, deleteOutbox, getAccount, getOutbox, getSyncLinks, getTracking, putOutbox, putSyncLinks, putTracking, saveAccount, syncLinkId
 } from './anilist-store.js';
+import { patchIsEmpty, patchToVariables, planAfterRead, toDateText } from '../tracking/tracking.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const LIBRARY_PROFILE = 'local-default';
@@ -29,7 +30,7 @@ export function describeAccount(account, now = Date.now()) {
   return { connected: true, expired: false, label: `Connected as ${account.viewer?.name || 'AniList user'}` };
 }
 
-async function activeClient(fetchImpl) {
+export async function activeClient(fetchImpl) {
   const account = await getAccount();
   const state = describeAccount(account);
   if (!state.connected) throw new AniListError(state.expired ? 'AniList sign-in expired. Connect again.' : 'Connect your AniList account first.', { code: 'UNAUTHORIZED' });
@@ -37,7 +38,7 @@ async function activeClient(fetchImpl) {
 }
 
 // Maps: AniList id <-> internal content id, built from sourceEntries (provider ids live there by design).
-async function loadMappings() {
+export async function loadMappings() {
   // Chapter-source link rows describe where chapters come from; they are not identity mappings.
   const rows = (await getAllRecords('sourceEntries')).filter(row => !row.linkRole);
   const byKey = new Map(rows.map(row => [`${row.sourceId}:${row.externalId}`, row.contentItemId]));
@@ -46,17 +47,61 @@ async function loadMappings() {
   return { byKey, mediaByContent };
 }
 
+// Turns an AniList entry into the row the tracking panel shows.
+export function trackingRowFromEntry({ mediaId, contentItemId, userId, entry, media = null, previous = null }) {
+  return {
+    mediaId: String(mediaId), contentItemId, userId,
+    entryId: entry?.id ?? null, onList: Boolean(entry),
+    status: entry?.status ?? null, progress: Number(entry?.progress) || 0, score: Number(entry?.score) || 0,
+    startedAt: toDateText(entry?.startedAt), completedAt: toDateText(entry?.completedAt),
+    totalChapters: Number(media?.chapters) || previous?.totalChapters || 0,
+    title: media ? (media.title?.english || media.title?.romaji || media.title?.native || previous?.title || '') : (previous?.title || ''),
+    siteUrl: media?.siteUrl || previous?.siteUrl || `https://anilist.co/manga/${mediaId}`,
+    updatedAtMs: (Number(entry?.updatedAt) || 0) * 1000
+  };
+}
+
+// Sends everything waiting in the outbox. A row holds a library status (from the library) and/or a patch (from tracking:
+// chapters read, score, dates, status). Network trouble keeps rows queued and stops; nothing is lost.
 export async function flushOutbox({ fetchImpl, sleepMs = PUSH_SPACING_MS } = {}) {
   const rows = (await getOutbox()).sort((a, b) => a.createdAt - b.createdAt);
-  if (!rows.length) return { sent: 0, remaining: 0 };
+  if (!rows.length) return { sent: 0, remaining: 0, applied: [] };
   const { account, client } = await activeClient(fetchImpl);
   let sent = 0;
+  const applied = [];
   for (const row of rows) {
     try {
-      const saved = await client.saveEntry({ mediaId: row.mediaId, status: toRemoteStatus(row.libraryStatus) });
+      const patch = { ...(row.patch || {}) };
+      if (row.autoRead) {
+        // "A chapter was read": decide against what AniList has right now, so progress can only go up and nothing is overwritten with older numbers.
+        const media = await client.mediaEntry(row.mediaId);
+        const remoteEntry = media.mediaListEntry;
+        const plan = planAfterRead({
+          entry: remoteEntry ? { status: remoteEntry.status, progress: remoteEntry.progress, startedAt: toDateText(remoteEntry.startedAt), completedAt: toDateText(remoteEntry.completedAt) } : null,
+          chapterNumber: row.autoRead.chapterNumber, totalChapters: media.chapters
+        });
+        Object.assign(patch, plan || {});
+        if (patchIsEmpty(patch) && !row.libraryStatus) {
+          await deleteOutbox(row.id);
+          const before = await getTracking(row.contentItemId);
+          if (remoteEntry) await putTracking(trackingRowFromEntry({ mediaId: row.mediaId, contentItemId: row.contentItemId, userId: account.viewer.id, entry: remoteEntry, media, previous: before }));
+          continue;
+        }
+      }
+      if (patch.status === undefined && row.libraryStatus && toRemoteStatus(row.libraryStatus)) patch.status = toRemoteStatus(row.libraryStatus);
+      const saved = await client.saveEntry({ mediaId: row.mediaId, ...patchToVariables(patch) });
       await deleteOutbox(row.id);
-      await putSyncLinks([{ id: syncLinkId(row.mediaId), provider: 'anilist', userId: account.viewer.id, mediaId: row.mediaId, contentItemId: row.contentItemId, entryId: saved.id, baseStatus: row.libraryStatus, remoteProgress: saved.progress ?? 0, remoteUpdatedAtMs: (saved.updatedAt || 0) * 1000, syncedAt: Date.now() }]);
+      const previous = (await getSyncLinks(account.viewer.id)).get(String(row.mediaId));
+      if (row.libraryStatus) {
+        await putSyncLinks([{ id: syncLinkId(row.mediaId), provider: 'anilist', userId: account.viewer.id, mediaId: row.mediaId, contentItemId: row.contentItemId, entryId: saved.id, baseStatus: row.libraryStatus, remoteProgress: saved.progress ?? 0, remoteUpdatedAtMs: (saved.updatedAt || 0) * 1000, syncedAt: Date.now() }]);
+      } else if (previous) {
+        // A tracking-only change: refresh the numbers but do not claim the library and AniList agree on a status.
+        await putSyncLinks([{ ...previous, entryId: saved.id, remoteProgress: saved.progress ?? 0, remoteUpdatedAtMs: (saved.updatedAt || 0) * 1000, syncedAt: Date.now() }]);
+      }
+      const trackingBefore = await getTracking(row.contentItemId);
+      await putTracking(trackingRowFromEntry({ mediaId: row.mediaId, contentItemId: row.contentItemId, userId: account.viewer.id, entry: saved, previous: trackingBefore }));
       sent += 1;
+      applied.push({ mediaId: String(row.mediaId), contentItemId: row.contentItemId, patch, saved });
       if (sleepMs) await sleep(sleepMs);
     } catch (error) {
       if (error.code === 'UNAUTHORIZED') { await clearAccount(); throw error; }
@@ -68,7 +113,25 @@ export async function flushOutbox({ fetchImpl, sleepMs = PUSH_SPACING_MS } = {})
       await putOutbox({ ...row, attempts: (row.attempts || 0) + 1, lastError: error.message });
     }
   }
-  return { sent, remaining: (await getOutbox()).length };
+  return { sent, remaining: (await getOutbox()).length, applied };
+}
+
+// Queue a tracking change for AniList, merged with anything already waiting for the same title.
+//   patch            fields the person set in the tracking panel (status, progress, score, dates)
+//   autoReadChapter  "this chapter was read": resolved against AniList's current entry when it is sent
+export async function queueTrackingPatch({ mediaId, contentItemId, patch = {}, autoReadChapter = null }) {
+  const existing = (await getOutbox()).find(row => row.id === syncLinkId(mediaId));
+  const merged = { ...(existing?.patch || {}), ...patch };
+  const before = Number(existing?.autoRead?.chapterNumber);
+  const now = autoReadChapter === null || autoReadChapter === undefined ? NaN : Number(autoReadChapter);
+  const highest = Math.max(Number.isFinite(before) ? before : -Infinity, Number.isFinite(now) ? now : -Infinity);
+  await putOutbox({
+    id: syncLinkId(mediaId), provider: 'anilist', mediaId: String(mediaId), contentItemId,
+    // A status picked in the tracking panel replaces an older library status that was still waiting.
+    libraryStatus: patch.status !== undefined ? undefined : existing?.libraryStatus,
+    patch: merged, autoRead: Number.isFinite(highest) ? { chapterNumber: highest } : undefined,
+    status: 'pending', createdAt: existing?.createdAt || Date.now(), attempts: 0
+  });
 }
 
 // Called after the user changes a title's status here. Quietly queues a push when the title has an AniList id.
@@ -80,7 +143,11 @@ export async function notifyLocalChange(contentItemId, { fetchImpl, flush = true
   if (!mediaId) return { queued: false, reason: 'not-linked' };
   const entry = await getRecord('libraryEntries', `${LIBRARY_PROFILE}:${contentItemId}`);
   if (!entry || !toRemoteStatus(entry.personalStatus)) return { queued: false, reason: 'no-entry' };
-  await putOutbox({ id: syncLinkId(mediaId), provider: 'anilist', mediaId, contentItemId, libraryStatus: entry.personalStatus, status: 'pending', createdAt: Date.now(), attempts: 0 });
+  const waiting = (await getOutbox()).find(row => row.id === syncLinkId(mediaId));
+  // A library status change replaces an older status in a waiting patch but keeps its chapters, score and dates.
+  const patch = { ...(waiting?.patch || {}) };
+  delete patch.status;
+  await putOutbox({ id: syncLinkId(mediaId), provider: 'anilist', mediaId, contentItemId, libraryStatus: entry.personalStatus, patch, status: 'pending', createdAt: waiting?.createdAt || Date.now(), attempts: 0 });
   if (flush) flushOutbox({ fetchImpl }).catch(() => {});
   return { queued: true, mediaId };
 }

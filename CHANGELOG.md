@@ -91,3 +91,23 @@
 - Settings > Account and sync: the client ID box is now "Use my own AniList app ID (advanced)"; new **Create an AniList account** and **Manage access on AniList** rows. A typed ID wins over the built-in one.
 - Nothing is gated behind a login. A returning sign-in link is still accepted only right after sign-in was started in the app.
 - Tests: 122 unit tests; new browser suite `login_card_e2e.py` (9 suites in all).
+
+## 0.9.4 - Chapter list options and AniList tracking
+- **Chapter list:** the whole list now loads (100 chapters at a time) so it can be sorted and filtered as one list. New filter button on a title with Mihon-style tabs: **Filter** (unread, bookmarked, scanlator), **Sort** (by source, chapter number, upload date, alphabetically; tap the selected one to flip the order) and **Display** (source title or chapter number). Choices are saved on the device and also appear in Settings > Reading > Chapter list. The reader still uses MangaDex order for Next and Previous.
+- **Per-chapter menu (the dots):** mark as read or unread, mark previous chapters as read, bookmark. Read chapters are dimmed; unfinished ones show the page you stopped on.
+- **Tracking panel on every title** (Tracking button): status, chapters read (with + and -), score 0-10, start date and finish date. A title is linked to AniList by exact ID (its own AniList entry, a stored link, or the AniList ID MangaDex lists). If there is none you search AniList and pick the right one yourself; names are never matched automatically.
+- **Update progress after reading** (Settings > Account and sync > Tracking, on by default): finishing a chapter updates AniList right away. **Update progress when marked as read:** Always, Ask each time, or Never.
+- **Instant, with a safety net:** changes are sent immediately. If AniList cannot be reached they are kept on the device and sent when you are back online or next open the app. Chapter updates are decided against AniList's current entry when sent, so progress only ever goes up; reaching the last chapter completes the title and fills the start and finish dates.
+- Worker: chapter pages accept `limit` (up to 100). Redeploy the Worker for faster loading; without it the app still works, 24 at a time.
+- Tests: 160+ unit tests; new browser suite `tracking_e2e.py` (10 suites).
+
+## 0.9.4 - Chapter options and AniList tracking (Mihon style)
+- **Chapter list options** (the sliders button on a title): **Sort** by source, chapter number, upload date or alphabetically (tap the selected one to flip the order), **Filter** by unread, bookmarked or scanlator, **Display** as source title or chapter number. Choices are saved in Settings > Reading > Chapter list.
+- The whole chapter list now loads (100 at a time, shown 60 rows at a time with Show more), so sorting and filtering work across every chapter, not one page. A very long title shows a "Load the remaining chapters" button. The Worker accepts `limit` up to 100 for chapter pages (redeploy it for fewer requests; the older Worker still works, just slower).
+- Every chapter row has a ⋯ menu: **Mark as read / unread**, **Mark previous as read**, **Bookmark**. Read chapters are dimmed with a tick, unread ones have a dot, and a started chapter shows its page.
+- **Tracking** button on every title: link it to AniList (the AniList ID is used when known; otherwise you search and pick, never matched by name), then set **status, chapters read (with + and −), score (0-10), start date and finish date**. Each change is sent to AniList straight away.
+- **Update progress after reading** (Settings > Account and sync > Tracking, on by default): finishing a chapter in the reader updates AniList. Progress only goes up, a title that was planned, paused or dropped becomes Reading, the start date is filled in once, and reaching the last chapter completes it. It is checked against AniList's live entry when sent, so older numbers never overwrite newer ones.
+- **Update progress when marked as read**: Always, Ask each time, or Never.
+- If AniList cannot be reached, the change is saved on this device, the panel says so, and it is sent when the phone is back online or the next time the app opens.
+- Browser tests: new `tracking_e2e.py` (10 suites in all). 145 unit tests.
+- Not done: other trackers (MyAnimeList, Kitsu and so on) are listed as planned; chapter downloads (the Downloaded filter) do not exist yet.

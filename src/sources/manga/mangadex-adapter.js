@@ -62,8 +62,8 @@ export const mangaDexAdapter = Object.freeze({
   async chapterPages(chapterExternalId, { signal } = {}) {
     return apiClient.chapterPages(chapterExternalId, { signal });
   },
-  async chapters(externalId, { page = 1, language = 'en', signal } = {}) {
-    const payload = await apiClient.mangaChapters(externalId, { page, language, signal });
+  async chapters(externalId, { page = 1, language = 'en', pageSize, signal } = {}) {
+    const payload = await apiClient.mangaChapters(externalId, { page, language, limit: pageSize, signal });
     if (!Array.isArray(payload?.data) || !payload?.pagination) throw new Error('MangaDex returned an invalid chapter list.');
     const limit = Math.max(1, Number(payload.pagination.limit) || 24);
     const pageNumber = Math.max(1, Number(payload.pagination.page) || Number(page) || 1);
@@ -86,5 +86,21 @@ export const mangaDexAdapter = Object.freeze({
       pagination: payload.pagination || { page: pageNumber, limit, total, hasNext: pageNumber * limit < total },
       source: 'mangadex'
     };
+  },
+  // Loads a title's chapter list page after page (100 at a time when the Worker allows it), so the app can sort and
+  // filter the whole list. Stops after `maxPages` and says whether anything is left (`nextPage`).
+  async allChapters(externalId, { language = 'en', signal, startPage = 1, maxPages = 12, onPage } = {}) {
+    const items = [];
+    let page = startPage;
+    let total = 0;
+    for (let loaded = 0; loaded < maxPages; loaded += 1) {
+      const result = await this.chapters(externalId, { page, language, pageSize: 100, signal });
+      items.push(...result.items);
+      total = Math.max(total, Number(result.pagination?.total) || 0);
+      if (onPage) onPage({ items: [...items], total });
+      if (!result.pagination?.hasNext || !result.items.length) return { items, total: Math.max(total, items.length), nextPage: null };
+      page += 1;
+    }
+    return { items, total, nextPage: page };
   }
 });

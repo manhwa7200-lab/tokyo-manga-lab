@@ -1,13 +1,13 @@
 # Tokyo Manga Lab - build info
 
-Version: 0.9.3
-Milestone: Optional one-tap AniList login
+Version: 0.9.4
+Milestone: Chapter list options and AniList tracking
 
 See `CHANGELOG.md` for what changed in each version and `docs/` for the design notes.
 
 ## Checks
 - `npm run check` parses every file and confirms the offline cache lists every module.
-- `npm test` runs the unit tests (122).
+- `npm test` runs the unit tests (145).
 - `python3 tests/e2e/run.py` runs the browser tests (needs Python Playwright with Chromium).
 
 ## Not included

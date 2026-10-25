@@ -7,6 +7,7 @@ const ALLOWED_DEV_ORIGINS = new Set([
 ]);
 const MAX_QUERY_LENGTH = 100;
 const PAGE_SIZE = 24;
+const MAX_CHAPTER_PAGE_SIZE = 100; // a client may ask for bigger chapter pages (up to this) so a whole title loads in a few requests
 const MAX_SEARCH_PAGE = 20;
 const MAX_CHAPTER_PAGE = 1000;
 const SAFE_RATINGS = ["safe", "suggestive"];
@@ -266,12 +267,12 @@ function normalizeChapter(chapter, mangaId) {
   };
 }
 
-async function doChapterList(id, page, language, allowAdult = false) {
+async function doChapterList(id, page, language, allowAdult = false, pageSize = PAGE_SIZE) {
   const title = await doMangaDetails(id, allowAdult);
   if (title.kind !== "ok") return title;
   const params = [
-    ["limit", PAGE_SIZE],
-    ["offset", (page - 1) * PAGE_SIZE],
+    ["limit", pageSize],
+    ["offset", (page - 1) * pageSize],
     ["order[chapter]", "desc"],
     ...allowedRatings(allowAdult).map(rating => ["contentRating[]", rating]),
     ["includes[]", "scanlation_group"],
@@ -286,7 +287,7 @@ async function doChapterList(id, page, language, allowAdult = false) {
   return {
     kind: "ok",
     data: items,
-    pagination: { page, limit: PAGE_SIZE, total, hasNext: page * PAGE_SIZE < total },
+    pagination: { page, limit: pageSize, total, hasNext: page * pageSize < total },
     manga: title.item
   };
 }
@@ -365,8 +366,10 @@ async function handleV1Chapters(id, url, origin) {
   const page = parsePage(url.searchParams.get("page"), MAX_CHAPTER_PAGE);
   const language = (url.searchParams.get("language") || "en").toLowerCase();
   if (language !== "all" && !/^[a-z]{2,3}$/.test(language)) return apiError("INVALID_LANGUAGE", "Use a two- or three-letter language code, or 'all'.", origin, 400);
+  const requestedSize = Number.parseInt(url.searchParams.get("limit") || "", 10);
+  const pageSize = Number.isFinite(requestedSize) ? Math.max(1, Math.min(MAX_CHAPTER_PAGE_SIZE, requestedSize)) : PAGE_SIZE;
   try {
-    const result = await doChapterList(id, page, language, adultRequested(url, origin));
+    const result = await doChapterList(id, page, language, adultRequested(url, origin), pageSize);
     if (result.kind === "missing" || result.kind === "filtered") return apiError("TITLE_UNAVAILABLE", "This title is unavailable in the current catalogue mode.", origin, 404);
     return json({ data: result.data, pagination: result.pagination, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex", language } }, 200, origin);
   } catch (error) {

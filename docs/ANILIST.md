@@ -28,7 +28,8 @@ If you are not sent back to the app, use **Paste a token instead** and paste an 
 - **Conflicts:** if the same title changed on both sides since the last sync, the newer change wins and the sync summary says so.
 - **Asks first:** if a sync would add or update titles on your AniList, you see how many and can cancel.
 - **Adult titles** on your AniList are skipped while the adult-content preference is off.
-- Chapter progress from AniList is shown on library cards ("AniList · ch. 12"). Progress and scores are not sent back yet.
+- Chapter progress from AniList is shown on library cards ("AniList · ch. 12").
+- **Chapters, score and dates are sent from the Tracking panel on a title** and automatically after you finish a chapter (see Settings > Account and sync > Tracking). They go out immediately when AniList is reachable, otherwise they wait on the device and are sent later. Library Sync Now still handles statuses.
 
 ## Privacy
 - The sign-in token is stored only on this device, in the app's local database. It is not included in backups.
@@ -43,3 +44,12 @@ If you are not sent back to the app, use **Paste a token instead** and paste an 
 
 ## Worker update (optional, needs your approval to deploy)
 `worker/src/index.js` now passes `anilistId` and `malId` through from MangaDex. To use it, update the deployed Worker. The Worker is named `tokyo-manga-lab-api2` (the app uses `tokyo-manga-lab-api2.haribp720.workers.dev`), and `worker/wrangler.toml` now says the same. Paste the new file into that Worker's code editor and deploy.
+
+## Tracking (since 0.9.4)
+Open a title and tap **Tracking**. Status, chapters read, score and dates are saved on AniList as soon as you change them.
+
+- **When it is sent:** immediately when AniList can be reached. If not, the change waits in a queue on this device and goes out when the phone is online again or the app is opened. The panel tells you which happened.
+- **After reading:** with *Update progress after reading* on, finishing a chapter updates AniList. Chapters without a number (extras) are ignored, 12.5 counts as 12, and progress never goes down.
+- **Marked as read:** the same update can run when you mark chapters read yourself (Always, Ask or Never).
+- **Which AniList title:** the stored link, the AniList ID MangaDex lists, or the one you choose by search. Titles are never matched by name automatically.
+- **Library status vs tracking:** these are separate. Tracking changes your AniList entry; the library status still syncs through *Sync now*, which will pull a changed status in.

@@ -25,6 +25,12 @@ import { featuresFor } from './features/feature-registry.js';
 import { mountReader, renderReaderShell } from './features/reader/reader-view.js';
 import { isChapterId, normalizePagesPayload } from './features/reader/reader-pages.js';
 import { resetTips } from './features/reader/reader-features.js';
+import { chaptersBefore, filterChapters, normalizeChapterView, scanlatorsOf, sortChapters } from './features/chapters/chapter-view.js';
+import { renderChapterOptions, renderChapterRow, renderChapterToolbar } from './features/chapters/chapter-ui.js';
+import { listBookmarkedChapterIds, listChapterPages, listReadChapterIds, setBookmark, setChaptersRead } from './data/repositories/chapter-marks-repository.js';
+import { renderTrackingPanel } from './features/tracking/tracking-ui.js';
+import { getTrackingState, linkTitle, pullTracking, saveTracking, searchTitles, trackChapterRead, unlinkTitle } from './features/tracking/tracking-service.js';
+import { progressNumber, scoreToRaw, trackStatusLabel } from './features/tracking/tracking.js';
 import { ANILIST_TOKEN_DEFAULT_TTL_SECONDS, AUTH_ATTEMPT_MAX_AGE_MS, DEFAULT_ANILIST_CLIENT_ID } from './features/anilist/anilist-config.js';
 import { buildAuthorizeUrl, looksLikeToken, parseAuthRedirect } from './features/anilist/anilist-auth.js';
 import { ANILIST_APPS_URL, ANILIST_REGISTER_URL, loginAvailability, resolveClientId } from './features/anilist/anilist-login.js';
@@ -39,7 +45,7 @@ const state = {
   library: [], libraryById: new Map(), libraryStatusFilter: 'all', collections: [], selectedCollectionId: '',
   anilist: { account: null, status: { connected: false, expired: false, label: 'Not connected' }, busy: false },
   readerContext: null, readerHandle: null, readerReturnHash: '#library',
-  libraryHiddenCount: 0, detailsItemId: null, detailsHistory: false, sheetItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, detailsLink: null, link: { status: 'idle', candidates: [], query: '', message: '', changing: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
+  libraryHiddenCount: 0, detailsItemId: null, detailsHistory: false, sheetItemId: null, detailsSequence: 0, chapterSequence: 0, detailsLoading: false, detailsLoadingChapters: false, detailsMetadataError: '', detailsError: '', detailsChapters: [], detailsChapterPage: 1, detailsChapterLanguage: 'en', detailsChapterPagination: { page: 1, limit: 24, total: 0, hasNext: false }, detailsChapterNext: null, detailsChapterTotal: 0, chapterShown: 60, chapterOptionsOpen: false, chapterOptionsTab: 'filter', chapterMenuId: null, chapterScanlator: '', detailsRead: new Set(), detailsBookmarks: new Set(), detailsPages: new Map(), track: null, detailsLink: null, link: { status: 'idle', candidates: [], query: '', message: '', changing: false }, searchSequence: 0, searchTimer: null, searchController: null, lastSearchTime: null
 };
 
 const app = new AppController({
@@ -335,7 +341,7 @@ async function renderDiscover() {
 
 async function renderLibrary() {
   await refreshLibraryIndex();
-  const syncLinks = new Map((await getAllRecords('syncLinks')).map(row => [row.contentItemId, row]));
+  const syncLinks = new Map((await getAllRecords('syncLinks')).filter(row => row.provider === 'anilist').map(row => [row.contentItemId, row]));
   state.collections = await getCollections();
   let entries = state.library;
   if (state.libraryStatusFilter !== 'all') entries = entries.filter(row => row.personalStatus === state.libraryStatusFilter);
@@ -703,6 +709,30 @@ function chapterLanguageOptions() {
   return all + CHAPTER_LANGUAGES.map(([value, label]) => `<option value="${value}" ${current === value ? 'selected' : ''}>${label}</option>`).join('');
 }
 
+// ---- chapter list view (sort, filter, display) and marks ---------------------------------------
+function currentChapterView() {
+  const settings = state.settings || {};
+  return normalizeChapterView({ sortKey: settings.chapterSortKey, sortDir: settings.chapterSortDir, display: settings.chapterDisplay, unread: settings.chapterFilterUnread, bookmarked: settings.chapterFilterBookmarked, scanlator: state.chapterScanlator });
+}
+
+function visibleChapters() {
+  const view = currentChapterView();
+  return sortChapters(filterChapters(state.detailsChapters, view, { readIds: state.detailsRead, bookmarkIds: state.detailsBookmarks }), view);
+}
+
+async function refreshChapterMarks(itemId = state.detailsItemId) {
+  state.detailsRead = await listReadChapterIds(itemId);
+  state.detailsBookmarks = await listBookmarkedChapterIds(itemId);
+  state.detailsPages = await listChapterPages(itemId);
+}
+
+async function saveChapterViewSetting(key, value) {
+  await saveSetting(key, value);
+  state.settings = { ...state.settings, [key]: value };
+}
+
+const idleTrack = () => ({ open: false, loading: false, connected: false, mediaId: null, row: null, pending: false, note: '', noteKind: '', search: { query: '', status: 'idle', results: [], message: '' } });
+
 function renderDetailsContent(rawItem) {
   if (!rawItem) return;
   const item = withFallbackMetadata(rawItem, state.detailsLink);
@@ -714,22 +744,187 @@ function renderDetailsContent(rawItem) {
   const fallbackNote = item.usedFallback?.length ? `<p class="muted">Filled in from MangaDex because AniList has none: ${escapeHtml(item.usedFallback.join(', '))}.</p>` : '';
   const metadataNotice = state.detailsMetadataError ? `<div class="notice warning"><strong>Using cached metadata.</strong> ${escapeHtml(state.detailsMetadataError)}</div>` : '';
   const canRead = Boolean(sourceRegistry.get('mangadex')?.capabilities?.chapterContent);
-  const chapterRows = state.detailsChapters.map(chapter => {
-    const volume = chapter.volumeNumber ? `Vol. ${chapter.volumeNumber} · ` : '';
-    const number = chapter.chapterNumber !== null && chapter.chapterNumber !== '' ? `Chapter ${chapter.chapterNumber}` : 'Extra / oneshot';
-    const label = `${volume}${number}${chapter.title ? ` — ${chapter.title}` : ''}`;
-    const sourceUrl = safeMangaDexChapterUrl(chapter.sourceUrl);
-    return `<article class="chapter-row"><div class="chapter-row-main"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(chapter.language || 'Unknown language')} · ${Number(chapter.pages) || 0} pages${chapter.publishedAt ? ` · ${escapeHtml(formatDate(chapter.publishedAt))}` : ''}</small>${chapter.scanlationGroups?.length ? `<small>Group: ${escapeHtml(chapter.scanlationGroups.join(', '))}</small>` : ''}</div><div class="chapter-actions">${canRead && Number(chapter.pages) > 0 ? `<button class="button-primary chapter-read" data-action="read-chapter" data-chapter-id="${escapeHtml(chapter.externalId)}">Read</button>` : ''}${sourceUrl ? `<a class="button chapter-open" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open on MangaDex">↗</a>` : ''}</div></article>`;
-  }).join('');
+  const view = currentChapterView();
+  const listed = visibleChapters();
+  const shownRows = listed.slice(0, state.chapterShown);
+  const chapterRows = shownRows.map(chapter => renderChapterRow({
+    chapter, display: view.display, read: state.detailsRead.has(chapter.externalId), bookmarked: state.detailsBookmarks.has(chapter.externalId),
+    menuOpen: state.chapterMenuId === chapter.externalId, canRead, sourceUrl: safeMangaDexChapterUrl(chapter.sourceUrl), progressPage: state.detailsPages.get(chapter.externalId) || 0
+  })).join('');
   let chapterNotice = '';
   if (state.detailsLoadingChapters) chapterNotice = '<div class="empty-state chapter-empty"><span class="spinner"></span><strong>Loading chapter list…</strong><span>Fetching chapter metadata only.</span></div>';
-  else if (state.detailsError) chapterNotice = `<div class="notice warning"><strong>Chapter list unavailable.</strong> ${escapeHtml(state.detailsError)} <span>Use the MangaDex source link for the latest chapter list.</span></div>`;
+  else if (state.detailsError) chapterNotice = `<div class="notice warning"><strong>${state.detailsChapters.length ? 'Some chapters could not be loaded.' : 'Chapter list unavailable.'}</strong> ${escapeHtml(state.detailsError)} <span>Use the MangaDex source link for the latest chapter list.</span></div>`;
   else if (!state.detailsChapters.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters in this result.</strong><span>Try another language or open the source page.</span></div>';
-  const pagination = state.detailsChapterPagination;
-  const pagesMarkup = pagination.total > pagination.limit ? `<div class="page-controls chapter-pager"><button class="button" data-action="chapter-page-back" ${pagination.page <= 1 ? 'disabled' : ''}>‹ Previous</button><div class="page-count"><strong>Page ${pagination.page}</strong>${Number(pagination.total).toLocaleString()} chapters</div><button class="button" data-action="chapter-page-next" ${!pagination.hasNext ? 'disabled' : ''}>Next ›</button></div>` : '';
-  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item, false, state.detailsLink?.fallback?.coverUrl)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}</div>${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${pagesMarkup}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
+  else if (!listed.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters match your filters.</strong><button class="button button-small" type="button" data-action="chapter-filters-clear">Clear filters</button></div>';
+  const hasChapters = state.detailsChapters.length > 0;
+  const toolbar = hasChapters ? renderChapterToolbar({ view, open: state.chapterOptionsOpen, shown: listed.length, total: state.detailsChapterTotal, loaded: state.detailsChapters.length }) : '';
+  const options = hasChapters && state.chapterOptionsOpen ? renderChapterOptions({ view, tab: state.chapterOptionsTab, scanlators: scanlatorsOf(state.detailsChapters) }) : '';
+  const more = [
+    listed.length > shownRows.length ? `<button class="button chapter-more-btn" type="button" data-action="chapter-show-more">Show ${Math.min(60, listed.length - shownRows.length)} more</button>` : '',
+    state.detailsChapterNext && !state.detailsLoadingChapters ? '<button class="button chapter-more-btn" type="button" data-action="chapter-load-rest">Load the remaining chapters</button>' : ''
+  ].join('');
+  const trackLabel = state.track?.row?.onList ? `Tracking · ${trackStatusLabel(state.track.row.status)}${state.track.row.progress ? ` · ch. ${state.track.row.progress}` : ''}` : 'Tracking';
+  const trackButton = `<button class="button-subtle" type="button" data-action="track-toggle" aria-expanded="${Boolean(state.track?.open)}">${escapeHtml(trackLabel)}</button>`;
+  const trackingPanel = state.track?.open ? renderTrackingPanel({ track: state.track, item, coverHtml: media => coverMarkup(media, true) }) : '';
+  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item, false, state.detailsLink?.fallback?.coverUrl)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}${trackButton}</div>${trackingPanel}${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${toolbar}${options}${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${more ? `<div class="chapter-more-row">${more}</div>` : ''}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
 }
 
+
+
+// ---- chapter marks and AniList tracking on a title ---------------------------------------------
+const redrawDetails = () => renderDetailsContent(currentDetailsItem());
+
+async function setChapterView(change) {
+  for (const [key, value] of Object.entries(change)) {
+    if (key === 'scanlator') state.chapterScanlator = String(value || '');
+    else await saveChapterViewSetting({ sortKey: 'chapterSortKey', sortDir: 'chapterSortDir', display: 'chapterDisplay', unread: 'chapterFilterUnread', bookmarked: 'chapterFilterBookmarked' }[key], value);
+  }
+  state.chapterShown = 60;
+  redrawDetails();
+}
+
+function trackerNote(result) {
+  if (result.outcome === 'sent') return `AniList updated: ${result.summary || 'saved'}.`;
+  if (result.outcome === 'queued') return 'AniList could not be reached. The update is saved on this device and will be sent later.';
+  return '';
+}
+
+// A chapter was read, or marked read. The update is decided against AniList's current entry when it is sent.
+async function trackAndReport(item, chapterNumber) {
+  try {
+    const result = await trackChapterRead(item, chapterNumber);
+    const text = trackerNote(result);
+    if (text) toast(text);
+    if (document.getElementById('detailsDialog')?.open && state.detailsItemId === item.id) { await loadTrackSummary(item, state.detailsSequence); }
+  } catch (error) {
+    console.warn('AniList progress not sent:', error);
+    toast(error?.code === 'UNAUTHORIZED' ? 'AniList sign-in expired. Connect again in Settings.' : 'Could not update AniList. Try again later.');
+  }
+}
+
+async function onChapterRead({ chapterId, contentItemId } = {}) {
+  if (!state.settings?.trackerAutoUpdate || !state.anilist.status.connected) return;
+  const context = state.readerContext;
+  const chapter = context?.chapters?.find(entry => entry.id === chapterId);
+  if (!chapter || chapter.number === null || chapter.number === undefined || chapter.number === '') return; // extras do not count
+  const item = [...state.results, ...state.library.map(row => row.item)].find(row => row?.id === contentItemId)
+    || await (await import('./data/database.js')).getRecord('contentItems', contentItemId);
+  if (!item) return;
+  await trackAndReport(item, chapter.number);
+}
+
+async function markChaptersRead(chapterIds, read) {
+  const item = currentDetailsItem();
+  if (!item) return;
+  const chapters = state.detailsChapters.filter(chapter => chapterIds.includes(chapter.externalId));
+  if (!chapters.length) return;
+  await setChaptersRead(item.id, chapters, read);
+  await refreshChapterMarks();
+  state.chapterMenuId = null;
+  redrawDetails();
+  toast(read ? (chapters.length === 1 ? 'Marked as read.' : `${chapters.length} chapters marked as read.`) : 'Marked as unread.');
+  if (!read) return;
+  const mode = state.settings?.trackerMarkRead || 'always';
+  const top = Math.max(...chapters.map(chapter => progressNumber(chapter.chapterNumber) ?? -1));
+  if (mode === 'never' || top < 1) return;
+  if (mode === 'ask' && !window.confirm(`Update AniList to chapter ${top}?`)) return;
+  await trackAndReport(item, top);
+}
+
+async function loadTrackSummary(item, sequence) {
+  try {
+    const summary = await getTrackingState(item);
+    if (sequence !== state.detailsSequence) return;
+    state.track = { ...(state.track || idleTrack()), connected: summary.connected, mediaId: summary.mediaId, row: summary.row, pending: summary.pending };
+    redrawDetails();
+  } catch (error) { console.warn('Tracking state not loaded:', error); }
+}
+
+async function toggleTracking() {
+  const item = currentDetailsItem();
+  if (!item) return;
+  if (state.track?.open) { state.track = { ...state.track, open: false }; redrawDetails(); return; }
+  const sequence = state.detailsSequence;
+  state.track = { ...(state.track || idleTrack()), open: true, loading: true, note: '', noteKind: '' };
+  redrawDetails();
+  try {
+    let summary = await getTrackingState(item);
+    state.track = { ...state.track, connected: summary.connected, mediaId: summary.mediaId, row: summary.row, pending: summary.pending };
+    if (summary.connected && summary.mediaId) {
+      try { summary = await pullTracking(item); state.track = { ...state.track, row: summary.row, pending: summary.pending }; }
+      catch (error) { state.track = { ...state.track, note: 'Could not reach AniList, so this shows the last saved copy.', noteKind: 'warn' }; }
+    } else if (summary.connected) {
+      state.track = { ...state.track, search: { query: item.title || '', status: 'idle', results: [], message: '' } };
+    }
+  } catch (error) {
+    state.track = { ...state.track, note: error?.message || 'Could not load tracking.', noteKind: 'error' };
+  } finally {
+    if (sequence === state.detailsSequence) { state.track = { ...state.track, loading: false }; redrawDetails(); }
+  }
+}
+
+async function runTrackSearch(query) {
+  const text = String(query || '').trim();
+  state.track = { ...state.track, search: { query: text, status: 'loading', results: [], message: '' } };
+  redrawDetails();
+  try {
+    const results = await searchTitles(text, { allowAdult: adultActive() });
+    state.track = { ...state.track, search: { query: text, status: 'done', results, message: '' } };
+  } catch (error) {
+    state.track = { ...state.track, search: { query: text, status: 'error', results: [], message: error?.message || 'AniList search failed.' } };
+  }
+  redrawDetails();
+}
+
+async function linkTrackTitle(mediaId) {
+  const item = currentDetailsItem();
+  const media = (state.track?.search?.results || []).find(entry => String(entry.id) === String(mediaId));
+  if (!item || !media) return;
+  await linkTitle(item, media);
+  state.track = { ...state.track, mediaId: String(media.id), row: null, loading: true, note: '', noteKind: '' };
+  redrawDetails();
+  try { const summary = await pullTracking(item); state.track = { ...state.track, row: summary.row, pending: summary.pending }; }
+  catch (error) { state.track = { ...state.track, note: 'Linked. AniList could not be reached for your entry just now.', noteKind: 'warn' }; }
+  state.track = { ...state.track, loading: false };
+  redrawDetails();
+}
+
+async function unlinkTrackTitle() {
+  const item = currentDetailsItem();
+  if (!item || !window.confirm('Track a different AniList title? This only changes the link on this device. Nothing is deleted on AniList.')) return;
+  await unlinkTitle(item);
+  state.track = { ...state.track, mediaId: null, row: null, pending: false, note: '', noteKind: '', search: { query: item.title || '', status: 'idle', results: [], message: '' } };
+  redrawDetails();
+}
+
+async function commitTracking(patch) {
+  const item = currentDetailsItem();
+  if (!item) return;
+  try {
+    const result = await saveTracking(item, patch);
+    const summary = await getTrackingState(item);
+    state.track = { ...state.track, row: summary.row, pending: summary.pending, note: result.outcome === 'sent' ? `Saved to AniList: ${result.summary}.` : 'Saved on this device. It will be sent to AniList when it can be reached.', noteKind: result.outcome === 'sent' ? 'ok' : 'queued' };
+  } catch (error) {
+    state.track = { ...state.track, note: error?.code === 'UNAUTHORIZED' ? 'AniList sign-in expired. Connect again in Settings.' : (error?.message || 'Could not save that.'), noteKind: 'error' };
+  }
+  redrawDetails();
+}
+
+async function onTrackField(input) {
+  const field = input.dataset.trackField;
+  let patch;
+  try {
+    if (field === 'status') patch = { status: input.value };
+    else if (field === 'progress') patch = { progress: Number(input.value) };
+    else if (field === 'score') patch = { score: scoreToRaw(input.value) };
+    else patch = { [field]: input.value ? input.value : null };
+  } catch (error) {
+    state.track = { ...state.track, note: error.message, noteKind: 'error' };
+    redrawDetails();
+    return;
+  }
+  await commitTracking(patch);
+}
 
 // ---- AniList -> MangaDex linking -------------------------------------------------------------
 const idleLink = () => ({ status: 'idle', candidates: [], query: '', message: '', changing: false });
@@ -846,27 +1041,42 @@ function renderLinkBanner(row) {
   return `<div class="link-banner"><div><strong>Chapters from MangaDex</strong><small>${escapeHtml(row.sourceTitle || 'MangaDex title')} · ${how}</small></div><div class="link-banner-actions">${url ? `<a class="button button-small" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}<button class="button button-small" type="button" data-action="link-change">Change</button><button class="button button-small button-danger" type="button" data-action="link-remove">Unlink</button></div></div>`;
 }
 
-async function loadDetailsChapters(externalId, page = 1, language = state.detailsChapterLanguage, sequence = state.detailsSequence) {
+// Loads the whole chapter list (page after page) so it can be sorted and filtered as one list. The first page shows
+// as soon as it arrives. If a title is very long, the rest waits behind a button.
+async function loadDetailsChapters(externalId, startPage = 1, language = state.detailsChapterLanguage, sequence = state.detailsSequence) {
   const adapter = sourceRegistry.get('mangadex');
-  if (!adapter?.chapters || !externalId) return;
+  if (!adapter?.allChapters || !externalId) return;
   const request = ++state.chapterSequence;
-  state.detailsLoadingChapters = true;
+  const continuing = startPage > 1;
+  const stale = () => request !== state.chapterSequence || sequence !== state.detailsSequence;
+  state.detailsLoadingChapters = !continuing;
   state.detailsError = '';
-  state.detailsChapterPage = Math.max(1, Number(page) || 1);
   state.detailsChapterLanguage = language;
+  if (!continuing) { state.detailsChapters = []; state.detailsChapterNext = null; state.chapterShown = 60; state.chapterMenuId = null; state.detailsChapterTotal = 0; }
+  const base = continuing ? [...state.detailsChapters] : [];
+  try { await refreshChapterMarks(); } catch (error) { console.warn('Chapter marks not loaded:', error); }
+  if (stale()) return;
   renderDetailsContent(currentDetailsItem());
   try {
-    const result = await adapter.chapters(externalId, { page: state.detailsChapterPage, language });
-    if (request !== state.chapterSequence || sequence !== state.detailsSequence) return;
-    state.detailsChapters = result.items;
-    state.detailsChapterPagination = result.pagination;
+    const result = await adapter.allChapters(externalId, {
+      language, startPage,
+      onPage: ({ items, total }) => {
+        if (stale()) return;
+        state.detailsChapters = [...base, ...items];
+        state.detailsChapterTotal = total;
+        state.detailsLoadingChapters = false;
+        renderDetailsContent(currentDetailsItem());
+      }
+    });
+    if (stale()) return;
+    state.detailsChapters = [...base, ...result.items];
+    state.detailsChapterTotal = Math.max(result.total, state.detailsChapters.length);
+    state.detailsChapterNext = result.nextPage;
   } catch (error) {
-    if (request !== state.chapterSequence || sequence !== state.detailsSequence) return;
-    state.detailsChapters = [];
-    state.detailsChapterPagination = { page: state.detailsChapterPage, limit: 24, total: 0, hasNext: false };
+    if (stale()) return;
     state.detailsError = chapterApiUnavailableMessage(error);
   } finally {
-    if (request === state.chapterSequence && sequence === state.detailsSequence) {
+    if (!stale()) {
       state.detailsLoadingChapters = false;
       renderDetailsContent(currentDetailsItem());
     }
@@ -888,6 +1098,11 @@ async function openDetails(contentItemId) {
   state.detailsChapterPage = 1;
   state.detailsChapterLanguage = state.settings?.preferredLanguage || 'en';
   state.detailsChapterPagination = { page: 1, limit: 24, total: 0, hasNext: false };
+  state.detailsChapterNext = null; state.detailsChapterTotal = 0; state.chapterShown = 60;
+  state.chapterOptionsOpen = false; state.chapterOptionsTab = 'filter'; state.chapterMenuId = null; state.chapterScanlator = '';
+  state.detailsRead = new Set(); state.detailsBookmarks = new Set(); state.detailsPages = new Map();
+  state.track = idleTrack();
+  loadTrackSummary(item, sequence);
   renderDetailsContent(item);
   const dialog = document.getElementById('detailsDialog');
   if (!dialog.open) {
@@ -1154,8 +1369,28 @@ async function handleAction(action, target) {
     case 'close-details': closeDetails(); break;
     case 'read-chapter': startReading(target.dataset.chapterId); break;
     case 'reader-tips-reset': resetTips(); toast('The reader tips will show next time you open a chapter.'); break;
-    case 'chapter-page-back': { const sourceId = chapterSourceFor(currentDetailsItem()); if (sourceId && state.detailsChapterPagination.page > 1) await loadDetailsChapters(sourceId, state.detailsChapterPagination.page - 1); break; }
-    case 'chapter-page-next': { const sourceId = chapterSourceFor(currentDetailsItem()); if (sourceId && state.detailsChapterPagination.hasNext) await loadDetailsChapters(sourceId, state.detailsChapterPagination.page + 1); break; }
+    case 'chapter-options-toggle': state.chapterOptionsOpen = !state.chapterOptionsOpen; redrawDetails(); break;
+    case 'chapter-options-tab': state.chapterOptionsTab = ['filter', 'sort', 'display'].includes(target.dataset.tab) ? target.dataset.tab : 'filter'; redrawDetails(); break;
+    case 'chapter-sort': {
+      const view = currentChapterView();
+      const key = target.dataset.sortKey;
+      if (key === view.sortKey) await setChapterView({ sortDir: view.sortDir === 'asc' ? 'desc' : 'asc' });
+      else await setChapterView({ sortKey: key, sortDir: 'desc' });
+      break;
+    }
+    case 'chapter-filters-clear': await setChapterView({ unread: false, bookmarked: false, scanlator: '' }); break;
+    case 'chapter-show-more': state.chapterShown += 60; redrawDetails(); break;
+    case 'chapter-load-rest': { const sourceId = chapterSourceFor(currentDetailsItem()); if (sourceId && state.detailsChapterNext) await loadDetailsChapters(sourceId, state.detailsChapterNext); break; }
+    case 'chapter-menu': state.chapterMenuId = state.chapterMenuId === target.dataset.chapterId ? null : target.dataset.chapterId; redrawDetails(); break;
+    case 'chapter-mark': await markChaptersRead([target.dataset.chapterId], target.dataset.read === '1'); break;
+    case 'chapter-mark-previous': await markChaptersRead([target.dataset.chapterId, ...chaptersBefore(state.detailsChapters, target.dataset.chapterId).map(chapter => chapter.externalId)], true); break;
+    case 'chapter-bookmark': { const item = currentDetailsItem(); if (item) { await setBookmark(item.id, target.dataset.chapterId, target.dataset.on === '1'); await refreshChapterMarks(); state.chapterMenuId = null; redrawDetails(); toast(target.dataset.on === '1' ? 'Bookmarked.' : 'Bookmark removed.'); } break; }
+    case 'track-toggle': await toggleTracking(); break;
+    case 'track-close': state.track = { ...state.track, open: false }; redrawDetails(); break;
+    case 'track-step': { const row = state.track?.row; const next = Math.max(0, (Number(row?.progress) || 0) + Number(target.dataset.delta || 0)); await commitTracking({ progress: next }); break; }
+    case 'track-link': await linkTrackTitle(target.dataset.mediaId); break;
+    case 'track-unlink': await unlinkTrackTitle(); break;
+    case 'track-go-settings': closeDetails(); break;
     case 'link-find': { const item = currentDetailsItem(); if (isLinkableAniListItem(item)) await runLinkMatching(item, state.detailsSequence); break; }
     case 'link-select': await selectLinkCandidate(target.dataset.mdId); break;
     case 'link-change': { const item = currentDetailsItem(); if (isLinkableAniListItem(item)) await runLinkSearch(item, item.title, { changing: true }); break; }
@@ -1204,6 +1439,8 @@ function bindUiEvents() {
   document.addEventListener('submit', event => {
     const collectionForm = event.target.closest('form[data-form="collection-new"]');
     if (collectionForm) { event.preventDefault(); submitNewCollection(collectionForm); return; }
+    const trackForm = event.target.closest('form[data-form="track-search"]');
+    if (trackForm) { event.preventDefault(); runTrackSearch(new FormData(trackForm).get('q')); return; }
     const linkForm = event.target.closest('form[data-form="link-search"]');
     if (linkForm) {
       event.preventDefault();
@@ -1237,6 +1474,13 @@ function bindUiEvents() {
         const row = state.library.find(entry => entry.contentItemId === itemId);
         const item = row?.item || state.results.find(entry => entry.id === itemId);
         if (item) { await setLibraryStatus(item, input.value); queueAniListPush(item.id); await refreshLibraryIndex(); await app.navigate('library'); toast('Reading status updated.'); }
+      } else if (input.matches('[data-chapter-view]')) {
+        const name = input.dataset.chapterView;
+        if (name === 'display') await setChapterView({ display: input.value });
+        else if (name === 'scanlator') await setChapterView({ scanlator: input.value });
+        else await setChapterView({ [name]: input.checked });
+      } else if (input.matches('[data-track-field]')) {
+        await onTrackField(input);
       } else if (input.matches('[data-action="chapter-language"]')) {
         const sourceId = chapterSourceFor(currentDetailsItem());
         if (sourceId) await loadDetailsChapters(sourceId, 1, input.value);
@@ -1253,6 +1497,10 @@ function bindUiEvents() {
   // Esc closes through the same path, so the cleanup and the history entry stay in step.
   document.getElementById('detailsDialog').addEventListener('cancel', event => { event.preventDefault(); closeDetails(); });
   window.addEventListener('popstate', handleDetailsPopState);
+  // Changes that were waiting for AniList go out as soon as the phone is back online.
+  window.addEventListener('online', () => { if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message)); });
+  // The reader tells us when a chapter was finished.
+  document.addEventListener('tml:chapter-read', event => { onChapterRead(event.detail).catch(error => console.warn('Tracking after reading failed:', error)); });
   document.getElementById('backupFileInput').addEventListener('change', async event => {
     const input = event.currentTarget;
     try { await uploadBackupFile(input.files?.[0]); }
@@ -1286,7 +1534,7 @@ async function initialize() {
       setConnectionStatus('offline', 'Catalogue offline');
       console.warn('Catalogue health check failed:', error.message);
     }
-    if (state.settings.anilistPushEnabled && state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message));
+    if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message));
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`).catch(error => console.warn('Offline app-shell registration skipped:', error));
     }

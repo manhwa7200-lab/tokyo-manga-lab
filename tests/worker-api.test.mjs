@@ -131,6 +131,25 @@ test('chapter route returns paginated metadata and canonical source links, not c
   assert.equal(body.pagination.hasNext, false);
 });
 
+test('chapter pages can be asked for in bigger sizes, up to a cap', async t => {
+  const limits = [];
+  mockFetch(t, async url => {
+    if (url.pathname === `/manga/${MANGA_ID}`) return jsonResponse({ data: sampleManga() });
+    limits.push([url.searchParams.get('limit'), url.searchParams.get('offset')]);
+    return jsonResponse({ data: [sampleChapter()], total: 250, limit: 100, offset: 0 });
+  });
+  const big = await (await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}/chapters?page=2&limit=100`))).json();
+  assert.deepEqual(limits.at(-1), ['100', '100'], 'page 2 of 100 starts at offset 100');
+  assert.equal(big.pagination.limit, 100);
+  assert.equal(big.pagination.hasNext, true);
+  await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}/chapters?limit=9999`));
+  assert.equal(limits.at(-1)[0], '100', 'the size is capped');
+  await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}/chapters?limit=abc`));
+  assert.equal(limits.at(-1)[0], '24', 'nonsense falls back to the default');
+  await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}/chapters`));
+  assert.equal(limits.at(-1)[0], '24', 'older clients still get 24');
+});
+
 test('invalid MangaDex IDs and language filters are rejected', async () => {
   const invalidId = await worker.fetch(apiRequest('/api/v1/manga/not-a-uuid'));
   assert.equal(invalidId.status, 400);

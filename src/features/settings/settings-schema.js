@@ -72,6 +72,13 @@ export const SETTINGS_CATEGORIES = Object.freeze([
         { type: 'toggle', key: 'readerSkipExtras', title: 'Skip extras', description: 'Next and previous chapter skip chapters without a chapter number, such as side stories and extras.' },
         { type: 'action', action: 'reader-tips-reset', title: 'Operation tips', description: 'Show the reader tips again the next time you open a chapter.', button: 'Show again' }
       ] },
+      { id: 'chapter-list', title: 'Chapter list', items: [
+        { type: 'select', key: 'chapterSortKey', title: 'Sort chapters', description: 'By source keeps MangaDex order. You can also change this from the filter button on a title.', options: [['source', 'By source'], ['number', 'By chapter number'], ['date', 'By upload date'], ['title', 'Alphabetically']] },
+        { type: 'select', key: 'chapterSortDir', title: 'Order', description: 'Which end of the list comes first.', options: [['desc', 'Newest or highest first'], ['asc', 'Oldest or lowest first']] },
+        { type: 'select', key: 'chapterDisplay', title: 'Chapter names', description: 'Show the title MangaDex gives each chapter, or only the chapter number.', options: [['source-title', 'Source title'], ['number', 'Chapter number']] },
+        { type: 'toggle', key: 'chapterFilterUnread', title: 'Only unread chapters', description: 'Hide chapters you have finished.' },
+        { type: 'toggle', key: 'chapterFilterBookmarked', title: 'Only bookmarked chapters', description: 'Show only chapters you bookmarked.' }
+      ] },
       { id: 'progress', title: 'Progress', items: [
         { type: 'info', title: 'Resume where you left off', value: 'Automatic', description: 'The reader reopens a chapter at the page you stopped on. Finished chapters reopen at page one.' },
         { type: 'planned', id: 'reading-goals', title: 'Reading goals', description: 'Weekly goals and streaks.' }
@@ -132,6 +139,12 @@ export const SETTINGS_CATEGORIES = Object.freeze([
         { type: 'info', title: 'Last sync', valueFrom: 'anilistLastSync', when: 'anilistConnected' },
         { type: 'action', action: 'anilist-apps', title: 'Manage access on AniList', description: 'Opens your AniList app permissions, where you can revoke this app completely.', button: 'Open', when: 'anilistConnected' },
         { type: 'action', action: 'anilist-disconnect', title: 'Sign out', description: 'Removes the sign-in from this device. To revoke access completely, remove the app at anilist.co/settings/apps.', button: 'Sign out', danger: true, when: 'anilistConnected' }
+      ] },
+      { id: 'tracking', title: 'Tracking', items: [
+        { type: 'toggle', key: 'trackerAutoUpdate', title: 'Update progress after reading', description: 'When you finish a chapter, AniList is updated straight away if you are signed in and the title is linked. If AniList cannot be reached, the update waits on this device and goes out later. Progress only ever goes up.' },
+        { type: 'select', key: 'trackerMarkRead', title: 'Update progress when marked as read', description: 'What happens on AniList when you mark chapters as read yourself from the chapter list.', options: [['always', 'Always'], ['ask', 'Ask each time'], ['never', 'Never']] },
+        { type: 'info', title: 'AniList', valueFrom: 'anilistStatus', description: 'Open a title and tap Tracking to link it, set its status, chapters, score and dates.' },
+        { type: 'planned', id: 'more-trackers', title: 'More trackers', description: 'MyAnimeList, Kitsu, MangaUpdates and others.' }
       ] },
       { id: 'tokyo-account', title: 'Tokyo Manga Lab account', items: [
         { type: 'planned', id: 'sign-in', title: 'Sign in', description: 'Create an account to sync without AniList and to apply as a creator.' },

@@ -65,7 +65,7 @@ export const apiClient = {
   // Keep search on the proven legacy route until the versioned endpoints are deployed.
   mangaSearch: ({ query = '', page = 1, signal } = {}) => getJson('manga', { q: String(query).trim().slice(0, 100), page: Math.max(1, Math.min(20, Number(page) || 1)) }, { signal }),
   mangaDetails: (externalId, { signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}`, {}, { signal }),
-  mangaChapters: (externalId, { page = 1, language = 'en', signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}/chapters`, { page: Math.max(1, Math.min(1000, Number(page) || 1)), language }, { signal }),
+  mangaChapters: (externalId, { page = 1, language = 'en', limit, signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}/chapters`, { page: Math.max(1, Math.min(1000, Number(page) || 1)), language, limit: limit ? Math.max(1, Math.min(100, Number(limit) || 24)) : undefined }, { signal }),
   chapterPages: (chapterId, { signal } = {}) => getJson(`api/v1/chapters/${encodeURIComponent(String(chapterId || ''))}/pages`, {}, { signal }),
   sources: ({ signal } = {}) => getJson('api/v1/sources', {}, { signal })
 };
