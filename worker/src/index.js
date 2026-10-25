@@ -16,6 +16,18 @@ const ADULT_RATINGS = ["erotica", "pornographic"];
 const BLOCKED_TAG_IDS = ["2d1f5d56-a1e5-4d0d-a961-2193588b08ec", "ddefd648-5140-4e5f-ba18-4eca4071d19b"];
 const BLOCKED_TAG_NAMES = new Set(["loli", "shota"]);
 
+// ---- Tag policy ---------------------------------------------------------------------------------------------------
+// A title tagged loli or shota is shown only when ALL of these hold:
+//   - MangaDex rates it "safe" (suggestive, erotica and pornographic are never shown, with or without the 18+ toggle);
+//   - it carries no tag about sexual content (see SEXUAL_TAG_WORDS), because a "safe" rating next to such a tag means the
+//     rating cannot be trusted;
+//   - its id is not in ALWAYS_BLOCKED_IDS, where you can list any title that slips through. See docs/TAG-POLICY.md.
+// Titles without these tags follow the normal rating rules.
+const ALWAYS_BLOCKED_IDS = new Set([
+  // "00000000-0000-4000-8000-000000000000", // Name, only a note for you
+]);
+const SEXUAL_TAG_WORDS = ["sexual", "incest", "erotic", "hentai", "smut", "ecchi", "nsfw", "lewd"];
+
 // Adult ratings are only ever returned to non-browser clients (the Android app sends no Origin header) that
 // ask for them with adult=1. This keeps the public GitHub Pages demo neutral. It is a product policy,
 // not authentication or age verification: CORS and the Origin header are not security boundaries.
@@ -162,8 +174,47 @@ function normalizePublicationStatus(value) {
   return 'unknown';
 }
 
+function hasSexualTag(item) {
+  return (item?.attributes?.tags || []).some(tag =>
+    Object.values(tag?.attributes?.name || {}).some(name => SEXUAL_TAG_WORDS.some(word => String(name).toLowerCase().includes(word))));
+}
+
+// True for a title that carries a blocked tag but passes the policy above.
+function isTaggedAndAllowed(item) {
+  return hasBlockedTag(item) && item?.attributes?.contentRating === "safe" && !hasSexualTag(item) && !ALWAYS_BLOCKED_IDS.has(String(item?.id || "").toLowerCase());
+}
+
 function isAllowedContent(item, allowAdult = false) {
-  return allowedRatings(allowAdult).includes(item?.attributes?.contentRating) && !hasBlockedTag(item);
+  if (!allowedRatings(allowAdult).includes(item?.attributes?.contentRating)) return false;
+  if (ALWAYS_BLOCKED_IDS.has(String(item?.id || "").toLowerCase())) return false;
+  return !hasBlockedTag(item) || isTaggedAndAllowed(item);
+}
+
+// The normal search request excludes the blocked tags, so safe-rated tagged titles are asked for separately: safe only,
+// first page of a text search, merged into the results. Best effort: a failure here never breaks a search.
+async function taggedSafeMatches(query, allowAdult = false) {
+  const text = String(query || "").trim();
+  if (!text) return [];
+  const params = [["limit", PAGE_SIZE], ["title", text], ["order[relevance]", "desc"], ["contentRating[]", "safe"], ["includedTagsMode", "OR"],
+    ["includes[]", "cover_art"], ["includes[]", "author"], ["includes[]", "artist"]];
+  for (const id of BLOCKED_TAG_IDS) params.push(["includedTags[]", id]);
+  try {
+    const payload = await fetchMangaDex("/manga", params);
+    return (payload.data || []).filter(item => isAllowedContent(item, allowAdult) && isTaggedAndAllowed(item));
+  } catch { return []; }
+}
+
+// Titles whose name contains every search word go first (the person is most likely looking for them), the rest after.
+function withTagged(extra, items, query) {
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = item => {
+    const attrs = item.attributes || {};
+    const text = [pickText(attrs.title), ...allTitleTexts(attrs.altTitles)].join(" ").toLowerCase();
+    return words.every(word => text.includes(word));
+  };
+  const seen = new Set(items.map(item => item.id));
+  const fresh = extra.filter(item => !seen.has(item.id));
+  return [...fresh.filter(matches), ...items, ...fresh.filter(item => !matches(item))];
 }
 
 function parsePage(value, max = MAX_SEARCH_PAGE) {
@@ -236,7 +287,8 @@ function mangaSearchParams(query, page, allowAdult = false) {
 
 async function doMangaSearch(query, page, allowAdult = false) {
   const payload = await fetchMangaDex("/manga", mangaSearchParams(query, page, allowAdult));
-  const items = (payload.data || []).filter(item => isAllowedContent(item, allowAdult)).map(normalizeManga);
+  const extra = page === 1 ? await taggedSafeMatches(query, allowAdult) : [];
+  const items = withTagged(extra, (payload.data || []).filter(item => isAllowedContent(item, allowAdult)), query).map(normalizeManga);
   const total = Math.max(0, Number(payload.total) || items.length);
   return {
     items,
@@ -311,7 +363,8 @@ async function handleLegacyManga(url, origin) {
   const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
   try {
     const payload = await fetchMangaDex("/manga", mangaSearchParams(title, page, allowAdult));
-    const data = (payload.data || []).filter(item => isAllowedContent(item, allowAdult)).map(item => {
+    const extra = page === 1 ? await taggedSafeMatches(title, allowAdult) : [];
+    const data = withTagged(extra, (payload.data || []).filter(item => isAllowedContent(item, allowAdult)), title).map(item => {
       const normalized = normalizeManga(item);
       return {
         id: normalized.externalId,

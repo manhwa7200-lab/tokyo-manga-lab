@@ -1,2 +1,4 @@
 # Files removed by the next 'Unzip and apply ZIP' run.
 mangadex-live.js   # old one-file prototype, no longer loaded by index.html
+docs/EXCEPTIONS.md   # replaced by docs/TAG-POLICY.md in 0.10.2
+tests/worker-exceptions.test.mjs   # replaced by tests/worker-tag-policy.test.mjs in 0.10.2

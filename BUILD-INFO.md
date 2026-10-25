@@ -1,6 +1,6 @@
 # Tokyo Manga Lab - build info
 
-Version: 0.10.0
+Version: 0.10.2
 Milestone: Themes, AniList profile, first public release
 
 See `CHANGELOG.md` for what changed in each version and `docs/` for the design notes.
