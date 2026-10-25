@@ -19,7 +19,47 @@ let adultAllowed = false;
 export function configureAdult(enabled) { adultAllowed = Boolean(enabled) && isNativeApp(); }
 export const adultActive = () => adultAllowed;
 
-async function getJson(path, params = {}, { signal } = {}) {
+// Connection state, for the status pill. 'online' after any good answer, 'offline' after a request that
+// still failed once its retries were used up.
+const statusListeners = new Set();
+let lastStatus = '';
+export function onApiStatus(listener) { statusListeners.add(listener); return () => statusListeners.delete(listener); }
+function reportStatus(status) {
+  if (status === lastStatus) return;
+  lastStatus = status;
+  for (const listener of statusListeners) { try { listener(status); } catch { /* a bad listener must not break requests */ } }
+}
+
+// Short hiccups (a dropped mobile connection, a gateway blip, a rate limit) are retried quietly before the user sees an error.
+const RETRY_DELAYS_MS = [700, 1800];
+const RETRYABLE = new Set(['NETWORK_ERROR', 'TIMEOUT', 'UPSTREAM_UNAVAILABLE', 'RATE_LIMITED']);
+const sleep = (ms, signal) => new Promise(resolve => {
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+});
+
+async function getJson(path, params = {}, { signal, retries = RETRY_DELAYS_MS.length } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const payload = await getJsonOnce(path, params, { signal });
+      reportStatus('online');
+      return payload;
+    } catch (error) {
+      const retryable = error instanceof ApiError && RETRYABLE.has(error.code);
+      // A server that answered with an error is still reachable; only real connection failures count as offline.
+      if (error instanceof ApiError && error.code !== 'NETWORK_ERROR' && error.code !== 'TIMEOUT') reportStatus('online');
+      const lastTry = attempt >= retries || (error.code === 'TIMEOUT' && attempt >= 1);
+      if (!retryable || lastTry || signal?.aborted) {
+        if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') { if (!signal?.aborted) reportStatus('offline'); }
+        throw error;
+      }
+      await sleep(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)], signal);
+      if (signal?.aborted) throw error;
+    }
+  }
+}
+
+async function getJsonOnce(path, params = {}, { signal } = {}) {
   const url = new URL(path.replace(/^\//, ''), `${API_BASE_URL}/`);
   if (adultAllowed && !path.includes('health') && !path.includes('sources')) url.searchParams.set('adult', '1');
   for (const [key, value] of Object.entries(params)) {
@@ -61,7 +101,7 @@ async function getJson(path, params = {}, { signal } = {}) {
 }
 
 export const apiClient = {
-  health: () => getJson('health'),
+  health: ({ signal } = {}) => getJson('health', {}, { signal, retries: 1 }),
   // Keep search on the proven legacy route until the versioned endpoints are deployed.
   mangaSearch: ({ query = '', page = 1, signal } = {}) => getJson('manga', { q: String(query).trim().slice(0, 100), page: Math.max(1, Math.min(20, Number(page) || 1)) }, { signal }),
   mangaDetails: (externalId, { signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}`, {}, { signal }),

@@ -213,3 +213,10 @@ a.row .row-trail { color: var(--faint); }
 .login-safety, .login-note { padding: 0; background: none; font-size: .78rem; line-height: 1.45; }
 .login-card-head p { font-size: .84rem; }
 .login-card-actions .button-subtle { margin-left: auto; }
+
+/* Profile: a short page — who you are, your numbers, AniList, library, settings */
+.profile-page > * + * { margin-top: 14px; }
+.profile-page .group-title { margin-bottom: -4px; }
+.profile-page .login-card { margin: 14px 0 0; }
+.chart-note { margin: 12px 0 0; font-size: .78rem; text-align: center; }
+.profile-page .stat-strip { margin-top: 14px; }

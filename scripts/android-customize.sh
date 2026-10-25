@@ -37,6 +37,22 @@ else
   echo "WARN: icon or ImageMagick missing - keeping default Capacitor icon"
 fi
 
+# --- Launch screen: replace Capacitor's default splash pictures with the app logo on the app's dark background ---
+# The generated project shows drawable*/splash.png while the app starts. Same look as the opening screen in the app.
+if [ -f "$ICON" ] && command -v convert >/dev/null 2>&1; then
+  SPLASH_COUNT=0
+  while IFS= read -r splash; do
+    dims=$(identify -format "%wx%h" "$splash" 2>/dev/null || echo "")
+    [ -n "$dims" ] || continue
+    w=${dims%x*}; h=${dims#*x}
+    short=$(( w < h ? w : h )); logo=$(( short * 38 / 100 ))
+    if convert -size "${w}x${h}" "radial-gradient:#2a1646-#09080f" \( "$ICON" -resize "${logo}x${logo}" \) -gravity center -composite "$splash"; then SPLASH_COUNT=$((SPLASH_COUNT + 1)); fi
+  done < <(find "$RES" -type f -name "splash.png" 2>/dev/null)
+  echo "Launch screen: replaced $SPLASH_COUNT splash picture(s)"
+else
+  echo "WARN: icon or ImageMagick missing - keeping the default launch screen"
+fi
+
 # --- AniList sign-in: let Android hand tokyomangalab://anilist-auth links back to the app ---
 MANIFEST=android/app/src/main/AndroidManifest.xml
 [ -f "$MANIFEST" ] || { echo "ERROR: $MANIFEST not found"; exit 1; }

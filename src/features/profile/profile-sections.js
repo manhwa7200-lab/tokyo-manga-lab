@@ -10,19 +10,9 @@ export const PROFILE_GROUPS = Object.freeze([
     ]
   },
   {
-    id: 'accounts', title: 'Accounts',
+    id: 'settings', title: 'More',
     rows: [
-      { id: 'anilist', title: 'AniList', description: 'Sign in and sync your manga list', icon: 'cloud', href: '#settings/account' }
-    ]
-  },
-  {
-    id: 'preferences', title: 'Settings',
-    rows: [
-      { id: 'appearance', title: 'Appearance', description: 'Theme, motion and cover size', icon: 'palette', href: '#settings/appearance' },
-      { id: 'reading', title: 'Reading', description: 'Reader and chapter list', icon: 'bookOpen', href: '#settings/reading' },
-      { id: 'content', title: 'Language and content', description: 'Chapter language and content safety', icon: 'globe', href: '#settings/content' },
-      { id: 'backup', title: 'Backup and restore', description: 'Export or import your library', icon: 'database', href: '#settings/library' },
-      { id: 'all-settings', title: 'All settings', description: 'Every category, with search', icon: 'sliders', href: '#settings' }
+      { id: 'all-settings', title: 'Settings', description: 'Appearance, reading, AniList, backup and more', icon: 'sliders', href: '#settings' }
     ]
   }
 ]);

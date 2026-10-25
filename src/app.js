@@ -159,6 +159,40 @@ function setConnectionStatus(status, label) {
   el.innerHTML = `<span class="status-dot"></span><span class="status-text">${escapeHtml(label)}</span>`;
 }
 
+// Keeps the status pill honest and brings the catalogue back by itself: while offline it re-checks every 20 seconds
+// (only while the app is visible), and straight away when the phone reports it is back online or the app returns to the front.
+let reconnectTimer = null;
+async function checkConnection() {
+  try {
+    const { apiClient } = await import('./services/api-client.js');
+    await apiClient.health();
+    return true;
+  } catch { return false; }
+}
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    if (document.visibilityState === 'hidden') { scheduleReconnect(); return; }
+    if (await checkConnection()) return;
+    scheduleReconnect();
+  }, 20000);
+}
+function handleApiStatus(status) {
+  if (status === 'online') {
+    const wasOffline = document.getElementById('connectionStatus')?.dataset.state === 'offline';
+    setConnectionStatus('online', 'MangaDex online');
+    if (wasOffline) recoverCatalogue();
+  } else {
+    setConnectionStatus('offline', 'Catalogue offline');
+    scheduleReconnect();
+  }
+}
+// After the connection comes back, reload the search that failed so the screen fills in without a manual retry.
+function recoverCatalogue() {
+  if (state.apiError && ['home', 'discover'].includes(app.currentRoute()) && !state.searchLoading) loadSearch(state.query, state.page);
+}
+
 // A cover that fails gets one more try (a changed address, in case the network blinked), then the other known cover
 // (for a linked title: the MangaDex/AniList one), and only then the local placeholder.
 document.addEventListener('load', event => {
@@ -397,16 +431,17 @@ async function renderProfile() {
   const stats = await getDashboardStatistics();
   await refreshAniList();
   const chevron = icon('chevronRight');
-  const groups = PROFILE_GROUPS.map(group => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${group.rows.map(row => listRow({ icon: row.icon, title: row.title, description: row.description, href: row.href, trail: chevron })).join('')}</div>`).join('');
-  const plannedRows = plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true, action: 'planned-feature', attrs: `data-title="${escapeHtml(row.title)}"` }));
-  return `<section class="narrow">
-    <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p>${state.anilist.status.connected ? `<span class="pill-label accent">${escapeHtml(state.anilist.status.label.replace('Connected as ', 'AniList: '))}</span>` : '<span class="pill-label">No account needed</span>'}</div></div>
+  const groups = PROFILE_GROUPS.map(group => `<div class="group">${group.rows.map(row => listRow({ icon: row.icon, title: row.title, description: row.description, href: row.href, trail: chevron })).join('')}</div>`).join('');
+  const connected = state.anilist.status.connected;
+  const activity = stats.hasReadingSessions
+    ? `<h2 class="group-title">Last seven days</h2><div class="group"><div class="surface-pad">${chartMarkup(stats)}<p class="chart-note">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of reading</p></div></div>`
+    : '';
+  return `<section class="narrow profile-page">
+    <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p>${connected ? `<span class="pill-label accent">${escapeHtml(state.anilist.status.label.replace('Connected as ', 'AniList: '))}</span>` : '<span class="pill-label">No account needed</span>'}</div></div>
     ${renderStats(stats)}
     ${renderAniListCard()}
+    ${activity}
     ${groups}
-    <h2 class="group-title">Reading activity</h2>
-    <div class="group"><div class="surface-pad">${chartMarkup(stats)}<div class="divider"></div><p style="margin:0;font-size:.8rem">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of active reading. Only time spent in the chapter reader counts.</p></div></div>
-    ${plannedFold(plannedRows)}
     <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)}</p>
   </section>`;
 }
@@ -601,7 +636,10 @@ function renderSettingsHome() {
     const rows = SETTINGS_CATEGORIES.filter(category => category.section === section.id).map(settingsCategoryRow);
     return rows.length ? `<h2 class="group-title">${escapeHtml(section.title)}</h2><div class="group">${rows.join('')}</div>` : '';
   }).join('');
-  const later = SETTINGS_CATEGORIES.filter(category => category.section === 'later').map(settingsCategoryRow);
+  const later = [
+    ...SETTINGS_CATEGORIES.filter(category => category.section === 'later').map(settingsCategoryRow),
+    ...plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true }))
+  ];
   return `<section class="narrow">
     <a class="back-link" href="#profile">${icon('chevronLeft')}Profile</a>
     <div class="page-head"><div><h1>Settings</h1><p>Saved on this device.</p></div></div>
@@ -1566,7 +1604,8 @@ function bindUiEvents() {
   document.getElementById('detailsDialog').addEventListener('cancel', event => { event.preventDefault(); closeDetails(); });
   window.addEventListener('popstate', handleDetailsPopState);
   // Changes that were waiting for AniList go out as soon as the phone is back online.
-  window.addEventListener('online', () => { if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message)); });
+  window.addEventListener('online', () => { checkConnection(); if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message)); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.getElementById('connectionStatus')?.dataset.state === 'offline') checkConnection(); });
   // The reader tells us when a chapter was finished.
   document.addEventListener('tml:chapter-read', event => { onChapterRead(event.detail).catch(error => console.warn('Tracking after reading failed:', error)); });
   document.getElementById('backupFileInput').addEventListener('change', async event => {
@@ -1575,6 +1614,18 @@ function bindUiEvents() {
     catch (error) { toast(error?.message || 'Could not import backup.'); }
     finally { input.value = ''; }
   });
+}
+
+// The opening screen stays up for a moment (so it reads as a launch screen, not a flash), then fades out.
+const SPLASH_MIN_MS = 1200;
+const splashStart = Date.now();
+function hideSplash() {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  const leave = () => { splash.classList.add('is-leaving'); setTimeout(() => splash.remove(), 600); };
+  // Automated browser tests skip the wait so they never click through an overlay.
+  if (navigator.webdriver) { splash.remove(); return; }
+  setTimeout(leave, Math.max(0, SPLASH_MIN_MS - (Date.now() - splashStart)));
 }
 
 async function initialize() {
@@ -1591,15 +1642,19 @@ async function initialize() {
     await refreshAniList();
     await listenForAppLinks(handleAniListRedirect);
     bindNavigation(route => { app.navigate(route); });
-    await loadSearch('', 1);
+    hideSplash();
+    // Show the screen first; the catalogue fills in when it answers, so a slow connection never blocks the app.
     await app.navigate(getCurrentRoute());
+    loadSearch('', 1).catch(error => console.warn('First catalogue load failed:', error?.message));
     try {
-      const { apiClient } = await import('./services/api-client.js');
+      const { apiClient, onApiStatus } = await import('./services/api-client.js');
+      onApiStatus(handleApiStatus);
       const health = await apiClient.health();
       setConnectionStatus('online', 'MangaDex online');
       console.info('Tokyo Manga Lab API ready:', health.service || 'health check passed');
     } catch (error) {
       setConnectionStatus('offline', 'Catalogue offline');
+      scheduleReconnect();
       console.warn('Catalogue health check failed:', error.message);
     }
     if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message));
@@ -1608,6 +1663,7 @@ async function initialize() {
     }
   } catch (error) {
     console.error('Tokyo Manga Lab initialization failed:', error);
+    hideSplash();
     root.innerHTML = `<section class="surface surface-pad"><h2>Local storage could not start</h2><p>${escapeHtml(error.message || 'Your browser could not open the local database.')}</p><p>Open this site through a web server or GitHub Pages and try again in a current browser.</p><button class="button" data-action="retry-screen">Retry</button></section>`;
   }
 }
