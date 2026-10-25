@@ -19,7 +19,7 @@ import { escapeHtml, formatDate, slug, truncate } from './shared/utils.js';
 import { hydrateIcons, icon } from './shared/icons.js';
 import { APP_VERSION } from './shared/app-info.js';
 import { coverVariants, retryUrl, safeCoverUrl } from './shared/covers.js';
-import { CHAPTER_LANGUAGES, SETTINGS_CATEGORIES, findCategory } from './features/settings/settings-schema.js';
+import { CHAPTER_LANGUAGES, SETTINGS_CATEGORIES, SETTINGS_SECTIONS, findCategory } from './features/settings/settings-schema.js';
 import { PROFILE_GROUPS, plannedProfileRows } from './features/profile/profile-sections.js';
 import { featuresFor } from './features/feature-registry.js';
 import { mountReader, renderReaderShell } from './features/reader/reader-view.js';
@@ -376,12 +376,11 @@ async function renderLibrary() {
 async function renderDownloads() {
   const rows = await (await import('./data/database.js')).getAllRecords('downloadJobs');
   const info = [
-    { icon: 'download', title: 'Offline chapters', description: 'Chapters are read straight from MangaDex and are not saved on this device. Offline reading is planned but not available yet.', planned: true },
-    { icon: 'database', title: 'Local storage', description: 'Your library, progress and settings live in this device\'s database. Cover images are cached by the app so they load faster.' },
+    { icon: 'database', title: 'Local storage', description: 'Library, progress and settings live on this device. Covers are cached so they load faster.' },
     { icon: 'clock', title: 'Download queue', description: `${rows.length} task${rows.length === 1 ? '' : 's'} recorded on this device.` }
   ];
   return `<section>
-    <div class="page-head"><div><h1>Downloads</h1><p>Offline reading is not available yet.</p></div></div>
+    <div class="page-head"><div><h1>Downloads</h1><p>Chapters are read online. Offline reading is planned.</p></div></div>
     <div class="group">${info.map(row => listRow(row)).join('')}</div>
     ${rows.length ? `<h2 class="group-title">Tasks</h2><div class="library-list">${rows.map(job => `<div class="library-card"><div class="library-cover library-cover-fallback">${icon('download')}</div><div class="library-info"><h3>${escapeHtml(job.status || 'Task')}</h3><p>${escapeHtml(job.lastError || 'Download task')}</p><span class="pill-label">${Number(job.bytesDownloaded || 0).toLocaleString()} bytes</span></div></div>`).join('')}</div>` : renderEmpty('Nothing downloaded yet', 'Download status and storage use will show here.')}
     ${renderRoadmap('downloads')}
@@ -399,16 +398,15 @@ async function renderProfile() {
   await refreshAniList();
   const chevron = icon('chevronRight');
   const groups = PROFILE_GROUPS.map(group => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${group.rows.map(row => listRow({ icon: row.icon, title: row.title, description: row.description, href: row.href, trail: chevron })).join('')}</div>`).join('');
-  const planned = plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true, action: 'planned-feature', attrs: `data-title="${escapeHtml(row.title)}"` })).join('');
-  return `<section>
+  const plannedRows = plannedProfileRows().map(row => listRow({ icon: row.icon, title: row.title, description: row.description, planned: true, action: 'planned-feature', attrs: `data-title="${escapeHtml(row.title)}"` }));
+  return `<section class="narrow">
     <div class="identity"><div class="identity-avatar" aria-hidden="true">東</div><div><h1>Local reader</h1><p>Your library lives on this device.</p>${state.anilist.status.connected ? `<span class="pill-label accent">${escapeHtml(state.anilist.status.label.replace('Connected as ', 'AniList: '))}</span>` : '<span class="pill-label">No account needed</span>'}</div></div>
-    ${renderAniListCard()}
     ${renderStats(stats)}
+    ${renderAniListCard()}
     ${groups}
     <h2 class="group-title">Reading activity</h2>
     <div class="group"><div class="surface-pad">${chartMarkup(stats)}<div class="divider"></div><p style="margin:0;font-size:.8rem">${stats.completedChapters} chapters completed · ${Math.round(stats.activeSessionSeconds / 60)} minutes of active reading. Only time spent in the chapter reader counts.</p></div></div>
-    <h2 class="group-title">Coming later</h2>
-    <div class="group">${planned}</div>
+    ${plannedFold(plannedRows)}
     <p class="footer-note">Tokyo Manga Lab ${escapeHtml(APP_VERSION)}</p>
   </section>`;
 }
@@ -430,7 +428,7 @@ const setAnilistCardHidden = hidden => { try { if (hidden) localStorage.setItem(
 function renderAniListCard() {
   const status = state.anilist.status;
   if (status.connected) {
-    return `<section class="login-card is-connected" aria-labelledby="anilistCardTitle"><div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">${escapeHtml(status.label)}</h2><p>Your AniList manga list is linked. Sync brings it in and, if you chose that, sends your changes back.</p></div></div><div class="login-card-actions"><button class="button-primary" type="button" data-action="anilist-sync">Sync now</button><a class="button" href="#settings/account">AniList settings</a></div></section>`;
+    return `<section class="login-card is-connected" aria-labelledby="anilistCardTitle"><div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">${escapeHtml(status.label)}</h2><p>Your manga list is linked. Sync brings it in.</p></div></div><div class="login-card-actions"><button class="button-primary" type="button" data-action="anilist-sync">Sync now</button><a class="button" href="#settings/account">AniList settings</a></div></section>`;
   }
   if (anilistCardHidden()) return `<p class="login-card-collapsed"><button class="link-button" type="button" data-action="anilist-card-show">Connect AniList (optional)</button></p>`;
   const availability = loginAvailability({ native: isNativeApp(), clientId: anilistClientId() });
@@ -441,8 +439,8 @@ function renderAniListCard() {
       ? '<a class="button-primary" href="#settings/account">Add an app ID</a>'
       : '<button class="button-primary" type="button" data-action="anilist-paste-token">Paste a token</button>';
   return `<section class="login-card" aria-labelledby="anilistCardTitle">
-    <div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">Connect AniList <span class="pill-label">Optional</span></h2><p>Bring your AniList manga list into your library and keep your progress there. Tokyo Manga Lab works fully without it.</p></div></div>
-    <p class="login-safety">You will go to <strong>anilist.co</strong> to log in or register. Check that the address says anilist.co before you type your password.</p>
+    <div class="login-card-head"><span class="login-card-icon" aria-hidden="true">${icon('cloud')}</span><div><h2 id="anilistCardTitle">Connect AniList <span class="pill-label">Optional</span></h2><p>Bring in your AniList manga list and keep progress there. The app works fully without it.</p></div></div>
+    <p class="login-safety">You will go to <strong>anilist.co</strong>. Check the address before typing your password.</p>
     ${note}
     <div class="login-card-actions">${signIn}<button class="button" type="button" data-action="anilist-register">Register</button><button class="button-subtle" type="button" data-action="anilist-card-hide">Not now</button></div>
   </section>`;
@@ -552,7 +550,8 @@ function settingRow(item) {
   const s = state.settings;
   if (item.type === 'planned') return listRow({ title: item.title, description: item.description, planned: true });
   if (item.type === 'link') return listRow({ title: item.title, description: item.description, href: item.href, external: true, trail: icon('external', 'icon-sm') });
-  const copy = `<span class="row-copy"><strong>${escapeHtml(item.title)}</strong>${item.description ? `<small>${escapeHtml(item.description)}</small>` : ''}</span>`;
+  const tag = item.badge ? `<span class="badge-note">${escapeHtml(item.badge)}</span> ` : '';
+  const copy = `<span class="row-copy"><strong>${escapeHtml(item.title)}</strong>${item.description || tag ? `<small>${tag}${escapeHtml(item.description || '')}</small>` : ''}</span>`;
   if (item.type === 'toggle') {
     return `<label class="row">${copy}<span class="row-trail"><span class="switch"><input type="checkbox" data-setting="${item.key}" ${s[item.key] ? 'checked' : ''}><span class="switch-track"></span></span></span></label>`;
   }
@@ -561,7 +560,7 @@ function settingRow(item) {
     return `<div class="row">${copy}<span class="row-trail"><label class="sr-only" for="set-${item.key}">${escapeHtml(item.title)}</label><select class="select-field" id="set-${item.key}" data-setting="${item.key}">${options}</select></span></div>`;
   }
   if (item.type === 'text') {
-    return `<div class="row">${copy}<span class="row-trail"><label class="sr-only" for="set-${item.key}">${escapeHtml(item.title)}</label><input class="field text-field" id="set-${item.key}" type="text" inputmode="${escapeHtml(item.inputMode || 'text')}" autocomplete="off" placeholder="${escapeHtml(item.placeholder || '')}" value="${escapeHtml(s[item.key] || '')}" data-setting="${item.key}"></span></div>`;
+    return `<div class="row row-stack">${copy}<label class="sr-only" for="set-${item.key}">${escapeHtml(item.title)}</label><input class="field text-field" id="set-${item.key}" type="text" inputmode="${escapeHtml(item.inputMode || 'text')}" autocomplete="off" placeholder="${escapeHtml(item.placeholder || '')}" value="${escapeHtml(s[item.key] || '')}" data-setting="${item.key}"></div>`;
   }
   if (item.type === 'action') {
     return `<div class="row">${copy}<span class="row-trail"><button class="button button-small ${item.danger ? 'button-danger' : ''}" type="button" data-action="${escapeHtml(item.action)}">${escapeHtml(item.button)}</button></span></div>${item.resultId ? `<p class="row-result" id="${escapeHtml(item.resultId)}" aria-live="polite"></p>` : ''}`;
@@ -570,25 +569,93 @@ function settingRow(item) {
   return `<div class="row is-info">${copy}<span class="row-trail"><span class="row-value" title="${escapeHtml(value)}">${escapeHtml(value)}</span></span></div>`;
 }
 
+// The label of the option a select setting is currently on (used for the live values on Settings home).
+function optionLabel(key) {
+  for (const category of SETTINGS_CATEGORIES) for (const group of category.groups) for (const item of group.items) {
+    if (item.key === key && item.options) return (item.options.find(([value]) => value === state.settings?.[key]) || [])[1] || '';
+  }
+  return '';
+}
+
+function categoryValue(category) {
+  switch (category.valueFrom) {
+    case 'theme': return optionLabel('theme');
+    case 'readerMode': return optionLabel('readerMode');
+    case 'language': return optionLabel('preferredLanguage');
+    case 'anilistStatus': return state.anilist.status.connected ? 'Connected' : 'Not connected';
+    default: return '';
+  }
+}
+
+function settingsCategoryRow(category) {
+  const value = categoryValue(category);
+  const trail = `${value ? `<span class="row-value">${escapeHtml(value)}</span>` : ''}${icon('chevronRight')}`;
+  return listRow({ icon: category.icon, title: category.title, description: category.summary, href: `#settings/${category.id}`, badge: category.planned ? 'Planned' : '', trail });
+}
+
+const foldMarkup = (title, body, { open = false } = {}) => `<details class="fold"${open ? ' open' : ''}><summary><span>${escapeHtml(title)}</span>${icon('chevronRight')}</summary>${body}</details>`;
+const plannedFold = rows => `<details class="roadmap"><summary>${icon('sparkle')}<span>Coming later</span><span class="count-pill">${rows.length}</span>${icon('chevronRight')}</summary><div class="group">${rows.join('')}</div></details>`;
+
 function renderSettingsHome() {
-  const row = category => listRow({ icon: category.icon, title: category.title, description: category.summary, href: `#settings/${category.id}`, badge: category.planned ? 'Planned' : '', trail: icon('chevronRight') });
-  return `<section>
+  const sections = SETTINGS_SECTIONS.filter(section => section.id !== 'later').map(section => {
+    const rows = SETTINGS_CATEGORIES.filter(category => category.section === section.id).map(settingsCategoryRow);
+    return rows.length ? `<h2 class="group-title">${escapeHtml(section.title)}</h2><div class="group">${rows.join('')}</div>` : '';
+  }).join('');
+  const later = SETTINGS_CATEGORIES.filter(category => category.section === 'later').map(settingsCategoryRow);
+  return `<section class="narrow">
     <a class="back-link" href="#profile">${icon('chevronLeft')}Profile</a>
-    <div class="page-head"><div><h1>Settings</h1><p>Choose a category.</p></div></div>
-    <div class="group">${SETTINGS_CATEGORIES.filter(c => !c.planned).map(row).join('')}</div>
-    <h2 class="group-title">Coming later</h2>
-    <div class="group">${SETTINGS_CATEGORIES.filter(c => c.planned).map(row).join('')}</div>
-    <p class="footer-note">Settings are saved on this device.</p>
+    <div class="page-head"><div><h1>Settings</h1><p>Saved on this device.</p></div></div>
+    <div class="settings-search"><label class="sr-only" for="settingsSearch">Search settings</label><span class="settings-search-icon" aria-hidden="true">${icon('search')}</span><input class="field" id="settingsSearch" type="search" placeholder="Search settings" autocomplete="off" enterkeyhint="search"></div>
+    <div id="settingsResults" aria-live="polite" hidden></div>
+    <div id="settingsCategories">${sections}${later.length ? plannedFold(later) : ''}</div>
   </section>`;
 }
 
+// Search every setting that is available now (not the planned ones) by title, description, group and category.
+function settingsSearchMarkup(query) {
+  const words = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  const blocks = [];
+  for (const category of SETTINGS_CATEGORIES) {
+    if (category.planned) continue;
+    for (const group of category.groups) {
+      const hits = group.items.filter(item => item.type !== 'planned' && itemVisible(item)).filter(item => {
+        const text = `${item.title} ${item.description || ''} ${item.badge || ''} ${group.title} ${category.title}`.toLowerCase();
+        return words.every(word => text.includes(word));
+      });
+      if (hits.length) blocks.push(`<h2 class="group-title"><a href="#settings/${category.id}">${escapeHtml(category.title)}</a> · ${escapeHtml(group.title)}</h2><div class="group">${hits.map(settingRow).join('')}</div>`);
+    }
+  }
+  return blocks.length ? blocks.join('') : renderEmpty('No settings found', 'Try a shorter word, such as “theme” or “sync”.');
+}
+
+function runSettingsSearch(query) {
+  const results = document.getElementById('settingsResults');
+  const categories = document.getElementById('settingsCategories');
+  if (!results || !categories) return;
+  const markup = settingsSearchMarkup(query);
+  results.innerHTML = markup;
+  results.hidden = !markup;
+  categories.hidden = Boolean(markup);
+}
+
 function renderSettingsCategory(category) {
-  const groups = category.groups.map(group => ({ group, items: group.items.filter(itemVisible) })).filter(({ items }) => items.length).map(({ group, items }) => `<h2 class="group-title">${escapeHtml(group.title)}</h2><div class="group">${items.map(settingRow).join('')}</div>`).join('');
-  return `<section>
+  const planned = [];
+  const groups = category.groups.map(group => {
+    const visible = group.items.filter(itemVisible);
+    if (category.planned) return { group, items: visible };
+    planned.push(...visible.filter(item => item.type === 'planned'));
+    return { group, items: visible.filter(item => item.type !== 'planned') };
+  }).filter(({ items }) => items.length).map(({ group, items }) => {
+    const body = `<div class="group">${items.map(settingRow).join('')}</div>`;
+    return group.collapsed ? foldMarkup(group.title, body) : `<h2 class="group-title">${escapeHtml(group.title)}</h2>${body}`;
+  }).join('');
+  return `<section class="narrow">
     <a class="back-link" href="#settings">${icon('chevronLeft')}Settings</a>
-    <div class="page-head"><div><h1>${escapeHtml(category.title)}</h1><p>${escapeHtml(category.summary)}</p></div></div>
+    <div class="page-head with-icon"><span class="head-icon" aria-hidden="true">${icon(category.icon)}</span><div><h1>${escapeHtml(category.title)}</h1><p>${escapeHtml(category.summary)}</p></div></div>
     ${category.planned ? '<div class="notice"><strong>Planned.</strong> These options are not available yet. They are listed so you can see what is coming.</div>' : ''}
     ${groups}
+    ${planned.length ? plannedFold(planned.map(item => settingRow(item))) : ''}
   </section>`;
 }
 
@@ -1456,6 +1523,7 @@ function bindUiEvents() {
 
   document.addEventListener('input', event => {
     const input = event.target;
+    if (input.matches('#settingsSearch')) { runSettingsSearch(input.value); return; }
     if (!input.matches('#homeSearch, #discoverSearch')) return;
     state.query = input.value;
     clearTimeout(state.searchTimer);

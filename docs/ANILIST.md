@@ -9,14 +9,10 @@ In the Android app: **Profile → Connect AniList → Log in with AniList**. Ani
 
 Afterwards the app asks whether to also save your status changes on AniList (say yes for two-way sync), then tap **Sync now**.
 
-## One-time setup for the developer (the app ID)
-Like other AniList apps, Tokyo Manga Lab can ship with its own app ID built in, so nobody has to create one. The ID is a public number, not a secret. Until you set it, the app falls back to asking each person for their own.
-1. On anilist.co open **Settings → Developer → Create New Application**.
-2. Name: `Tokyo Manga Lab`. Redirect URL: `tokyomangalab://anilist-auth` (exactly; it must not be another app's redirect such as `whatnext://auth`).
-3. Save and copy the **Client ID** (a number). You do not need the client secret. Never share it.
-4. In GitHub edit `src/features/anilist/anilist-config.js` and put the number in `DEFAULT_ANILIST_CLIENT_ID = '12345';`. Commit, then build the APK again.
+## The app ID
+Tokyo Manga Lab ships with its own AniList app ID (`44302`, set in `src/features/anilist/anilist-config.js`). It is a public number, not a secret. On anilist.co (Settings -> Developer) that app's **Redirect URL must be exactly `tokyomangalab://anilist-auth`**; if it is anything else, AniList will not return you to the app after you approve.
 
-Anyone who wants to use their own app can still paste an ID in Settings → Account and sync (advanced). A typed ID wins over the built-in one.
+Anyone who wants to use their own app can still paste an ID in Settings -> Account and sync (advanced). A typed ID wins over the built-in one.
 
 If you are not sent back to the app, use **Paste a token instead** and paste an AniList access token.
 

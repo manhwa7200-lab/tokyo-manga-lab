@@ -16,12 +16,13 @@ export const PROFILE_GROUPS = Object.freeze([
     ]
   },
   {
-    id: 'preferences', title: 'Preferences',
+    id: 'preferences', title: 'Settings',
     rows: [
       { id: 'appearance', title: 'Appearance', description: 'Theme, motion and cover size', icon: 'palette', href: '#settings/appearance' },
+      { id: 'reading', title: 'Reading', description: 'Reader and chapter list', icon: 'bookOpen', href: '#settings/reading' },
       { id: 'content', title: 'Language and content', description: 'Chapter language and content safety', icon: 'globe', href: '#settings/content' },
       { id: 'backup', title: 'Backup and restore', description: 'Export or import your library', icon: 'database', href: '#settings/library' },
-      { id: 'all-settings', title: 'All settings', description: 'Every category in one place', icon: 'sliders', href: '#settings' }
+      { id: 'all-settings', title: 'All settings', description: 'Every category, with search', icon: 'sliders', href: '#settings' }
     ]
   }
 ]);

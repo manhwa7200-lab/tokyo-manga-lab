@@ -24,7 +24,7 @@ with sync_playwright() as p:
     pg.goto(U + '#profile'); pg.wait_for_selector('.login-card')
     card = pg.inner_text('.login-card')
     ok('Optional' in card and 'works fully without it' in card, 'card says AniList is optional')
-    ok('anilist.co' in card and 'before you type your password' in card, 'card tells you to check the anilist.co address')
+    ok('anilist.co' in card and 'before typing your password' in card, 'card tells you to check the anilist.co address')
     ok(pg.query_selector('[data-action="anilist-connect"]') is None and pg.query_selector('[data-action="anilist-paste-token"]') is not None, 'browser: offers a token paste instead of one-tap login')
     pg.screenshot(path=S + '/shots/login-card-web.png')
     with ctx.expect_page() as popup:
@@ -42,23 +42,24 @@ with sync_playwright() as p:
     ok(errs == [], 'no page errors (web)')
     ctx.close()
 
-    # 2. Android shell without a built-in or typed app ID: explains, does not break.
+    # 2. Android shell: the built-in app ID makes it one tap.
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, service_workers='block')
     ctx.add_init_script(NATIVE); ctx.route('**/*.workers.dev/**', worker)
     pg = ctx.new_page(); pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto(U + '#profile'); pg.wait_for_selector('.login-card')
-    txt = pg.inner_text('.login-card')
-    ok('app ID' in txt and pg.query_selector('.login-card a[href="#settings/account"]') is not None, 'app without an ID: card points to Settings')
-    ok(pg.query_selector('.login-card [data-action="anilist-connect"]') is None, 'no login button that would do nothing')
-
-    # 3. Android shell with an ID: one tap opens AniList.
-    pg.goto(U + '#settings/account'); pg.wait_for_selector('[data-setting="anilistClientId"]')
-    pg.fill('[data-setting="anilistClientId"]', '54060'); pg.keyboard.press('Tab'); pg.wait_for_timeout(500)
     pg.goto(U + '#profile'); pg.wait_for_selector('.login-card [data-action="anilist-connect"]')
     pg.screenshot(path=S + '/shots/login-card-native.png')
     pg.click('.login-card [data-action="anilist-connect"]'); pg.wait_for_timeout(600)
     opened = pg.evaluate('window.__opened')
-    ok(opened and 'client_id=54060' in opened and 'response_type=token' in opened and 'redirect_uri' not in opened, 'one tap opens the AniList authorize page')
+    ok(opened and 'client_id=44302' in opened and 'response_type=token' in opened and 'redirect_uri' not in opened, 'one tap opens AniList with the built-in app ID')
+
+    # 3. An ID typed in Settings (advanced) wins over the built-in one.
+    pg.goto(U + '#settings/account'); pg.wait_for_selector('[data-setting="anilistClientId"]', state='attached')
+    pg.evaluate("document.querySelectorAll('details.fold').forEach(d => { d.open = true; })")
+    pg.fill('[data-setting="anilistClientId"]', '54060'); pg.keyboard.press('Tab'); pg.wait_for_timeout(500)
+    pg.goto(U + '#profile'); pg.wait_for_selector('.login-card [data-action="anilist-connect"]')
+    pg.evaluate('window.__opened = null')
+    pg.click('.login-card [data-action="anilist-connect"]'); pg.wait_for_timeout(600)
+    ok('client_id=54060' in (pg.evaluate('window.__opened') or ''), 'a typed app ID wins over the built-in one')
     ok(not errs, 'no page errors (app)')
     b.close()
 print('ALL LOGIN CARD E2E CHECKS PASSED')

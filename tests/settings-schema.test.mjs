@@ -96,3 +96,20 @@ test('AniList settings validate their input', () => {
   assert.equal(normalizeSettingValue('anilistPushEnabled', 1), true);
   assert.equal(DEFAULT_SETTINGS.anilistPushEnabled, false, 'pushing to AniList must be opt-in');
 });
+
+test('every category sits in a real section and live category values are known', async () => {
+  const { SETTINGS_SECTIONS, CATEGORY_VALUES } = await import('../src/features/settings/settings-schema.js');
+  const sections = new Set(SETTINGS_SECTIONS.map(section => section.id));
+  for (const category of SETTINGS_CATEGORIES) {
+    assert.ok(sections.has(category.section), `${category.id} has no valid section`);
+    if (category.valueFrom) assert.ok(CATEGORY_VALUES.includes(category.valueFrom), `${category.id}: unknown live value ${category.valueFrom}`);
+    assert.equal(Boolean(category.planned), category.section === 'later', `${category.id}: planned categories belong to the "later" section`);
+  }
+});
+
+test('settings descriptions stay short enough to scan', () => {
+  for (const category of SETTINGS_CATEGORIES) for (const group of category.groups) for (const item of group.items) {
+    if (item.type === 'text') continue;
+    assert.ok((item.description || '').length <= 130, `${category.id}/${item.title}: description is too long; shorten it`);
+  }
+});

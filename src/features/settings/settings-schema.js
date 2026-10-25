@@ -21,93 +21,130 @@ export const CHAPTER_LANGUAGES = Object.freeze([
   ['ar', 'Arabic'], ['hi', 'Hindi'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']
 ]);
 
+// Settings home groups its categories under these headings.
+export const SETTINGS_SECTIONS = Object.freeze([
+  { id: 'app', title: 'App' },
+  { id: 'connections', title: 'Accounts and sources' },
+  { id: 'data', title: 'Data and about' },
+  { id: 'later', title: 'Coming later' }
+]);
+
+// A category may show a live value on the settings home: `valueFrom` names one of CATEGORY_VALUES (computed in app.js).
+// A group may be `collapsed: true` (an "advanced" fold). An item may carry `badge` (a short tag such as "Android app").
 export const SETTINGS_CATEGORIES = Object.freeze([
   {
-    id: 'appearance', title: 'Appearance', icon: 'palette', summary: 'Theme, motion and cover size',
+    id: 'appearance', section: 'app', title: 'Appearance', icon: 'palette', summary: 'Theme and covers', valueFrom: 'theme',
     groups: [
       { id: 'theme', title: 'Theme', items: [
-        { type: 'select', key: 'theme', title: 'Colour theme', description: 'Sakura Night is the default. Midnight Blue uses cooler accents.', options: [['sakura', 'Sakura Night'], ['midnight', 'Midnight Blue']] },
+        { type: 'select', key: 'theme', title: 'Colour theme', description: 'Sakura Night or Midnight Blue.', options: [['sakura', 'Sakura Night'], ['midnight', 'Midnight Blue']] },
         { type: 'planned', id: 'accent-colour', title: 'Accent colour', description: 'Pick your own accent.' },
         { type: 'planned', id: 'pure-black', title: 'Pure black mode', description: 'True black backgrounds for AMOLED screens.' }
       ] },
       { id: 'display', title: 'Display', items: [
-        { type: 'select', key: 'coverSize', title: 'Cover size', description: 'Comfortable shows two covers per row on a phone. Compact shows three.', options: [['comfortable', 'Comfortable'], ['compact', 'Compact']] },
+        { type: 'select', key: 'coverSize', title: 'Cover size', description: 'Two covers per row, or three when compact.', options: [['comfortable', 'Comfortable'], ['compact', 'Compact']] },
         { type: 'toggle', key: 'reducedMotion', title: 'Reduce motion', description: 'Turn off animations and transitions.' },
         { type: 'planned', id: 'text-size', title: 'Text size', description: 'Make text larger or smaller across the app.' }
       ] }
     ]
   },
   {
-    id: 'library', title: 'Library', icon: 'library', summary: 'Sorting, collections and backup',
-    groups: [
-      { id: 'shelf', title: 'Shelf', items: [
-        { type: 'select', key: 'defaultLibrarySort', title: 'Sort library by', description: 'How titles are ordered when you open your library.', options: [['recently-updated', 'Recently updated'], ['recently-added', 'Recently added'], ['title', 'Title (A to Z)']] }
-      ] },
-      { id: 'collections', title: 'Collections', items: [
-        { type: 'planned', id: 'smart-collections', title: 'Smart collections', description: 'Collections that fill themselves from rules.' },
-        { type: 'planned', id: 'manage-collections', title: 'Manage collections', description: 'Rename, reorder and delete collections.' }
-      ] },
-      { id: 'backup', title: 'Backup and restore', items: [
-        { type: 'action', action: 'export-backup', title: 'Export backup', description: 'Save your library, collections and settings as a JSON file.', button: 'Export' },
-        { type: 'action', action: 'import-backup', title: 'Import backup', description: 'Merge a backup file into this device. Downloaded files are not part of a backup.', button: 'Import' }
-      ] }
-    ]
-  },
-  {
-    id: 'reading', title: 'Reading', icon: 'bookOpen', summary: 'Reader, progress and downloads',
+    id: 'reading', section: 'app', title: 'Reading', icon: 'bookOpen', summary: 'Reader and chapters', valueFrom: 'readerMode',
     groups: [
       { id: 'reader', title: 'Reader', items: [
-        { type: 'select', key: 'readerMode', title: 'Reading mode', description: 'Vertical scroll suits webtoons. Right to left suits manga. You can also change it inside the reader.', options: [['scroll', 'Vertical scroll'], ['rtl', 'Right to left'], ['ltr', 'Left to right']] },
-        { type: 'select', key: 'readerFit', title: 'Page fit', description: 'Applies to the page-by-page modes.', options: [['width', 'Fit width'], ['height', 'Fit height']] },
-        { type: 'select', key: 'readerQuality', title: 'Image quality', description: 'Data saver uses smaller, compressed pages. Handy on mobile data.', options: [['data', 'Original quality'], ['data-saver', 'Data saver']] },
-        { type: 'select', key: 'readerOrientation', title: 'Screen rotation', description: 'Lock the screen to portrait or landscape while reading. Android app only.', options: [['auto', 'Auto'], ['portrait', 'Portrait'], ['landscape', 'Landscape']] },
-        { type: 'select', key: 'readerAutoSpeed', title: 'Auto read speed', description: 'How fast auto read scrolls or turns pages. Start it from the reader options.', options: [['1', 'Very slow'], ['2', 'Slow'], ['3', 'Medium'], ['4', 'Fast'], ['5', 'Very fast']] },
+        { type: 'select', key: 'readerMode', title: 'Reading mode', description: 'Scroll for webtoons, right to left for manga.', options: [['scroll', 'Vertical scroll'], ['rtl', 'Right to left'], ['ltr', 'Left to right']] },
+        { type: 'select', key: 'readerFit', title: 'Page fit', description: 'For the page-by-page modes.', options: [['width', 'Fit width'], ['height', 'Fit height']] },
+        { type: 'select', key: 'readerQuality', title: 'Image quality', description: 'Data saver uses less mobile data.', options: [['data', 'Original quality'], ['data-saver', 'Data saver']] },
+        { type: 'select', key: 'readerOrientation', title: 'Screen rotation', badge: 'Android app', description: 'Lock portrait or landscape while reading.', options: [['auto', 'Auto'], ['portrait', 'Portrait'], ['landscape', 'Landscape']] },
+        { type: 'select', key: 'readerAutoSpeed', title: 'Auto read speed', description: 'Start auto read from the reader options.', options: [['1', 'Very slow'], ['2', 'Slow'], ['3', 'Medium'], ['4', 'Fast'], ['5', 'Very fast']] },
+        { type: 'info', title: 'Resume where you left off', value: 'Automatic', description: 'Chapters reopen at the page you stopped on. Finished chapters start at page one.' },
         { type: 'planned', id: 'keep-awake', title: 'Keep screen on', description: 'Stop the screen sleeping while you read.' }
       ] },
       { id: 'reader-display', title: 'Reader display and controls', items: [
-        { type: 'toggle', key: 'readerShowStatusBar', title: 'Show status bar', description: 'Turn off to read full screen. Android app only.' },
-        { type: 'toggle', key: 'readerShowClock', title: 'Time and battery', description: 'A small clock and battery level on the page. Battery level depends on your device.' },
-        { type: 'toggle', key: 'readerVolumeKeys', title: 'Volume keys turn pages', description: 'Volume down goes forward, volume up goes back, only while the reader is open. Android app only.' },
-        { type: 'toggle', key: 'readerChapterNotice', title: 'Chapter reminder', description: 'Show the chapter name when you open it, so you always know where you are.' },
-        { type: 'toggle', key: 'readerSkipExtras', title: 'Skip extras', description: 'Next and previous chapter skip chapters without a chapter number, such as side stories and extras.' },
-        { type: 'action', action: 'reader-tips-reset', title: 'Operation tips', description: 'Show the reader tips again the next time you open a chapter.', button: 'Show again' }
+        { type: 'toggle', key: 'readerShowStatusBar', title: 'Show status bar', badge: 'Android app', description: 'Turn off to read full screen.' },
+        { type: 'toggle', key: 'readerShowClock', title: 'Time and battery', description: 'A small clock and battery level on the page.' },
+        { type: 'toggle', key: 'readerVolumeKeys', title: 'Volume keys turn pages', badge: 'Android app', description: 'Volume down goes forward, volume up goes back.' },
+        { type: 'toggle', key: 'readerChapterNotice', title: 'Chapter reminder', description: 'Show the chapter name when you open it.' },
+        { type: 'toggle', key: 'readerSkipExtras', title: 'Skip extras', description: 'Next and previous skip chapters with no number.' },
+        { type: 'action', action: 'reader-tips-reset', title: 'Operation tips', description: 'Show the reader tips again next time.', button: 'Show again' }
       ] },
       { id: 'chapter-list', title: 'Chapter list', items: [
-        { type: 'select', key: 'chapterSortKey', title: 'Sort chapters', description: 'By source keeps MangaDex order. You can also change this from the filter button on a title.', options: [['source', 'By source'], ['number', 'By chapter number'], ['date', 'By upload date'], ['title', 'Alphabetically']] },
-        { type: 'select', key: 'chapterSortDir', title: 'Order', description: 'Which end of the list comes first.', options: [['desc', 'Newest or highest first'], ['asc', 'Oldest or lowest first']] },
-        { type: 'select', key: 'chapterDisplay', title: 'Chapter names', description: 'Show the title MangaDex gives each chapter, or only the chapter number.', options: [['source-title', 'Source title'], ['number', 'Chapter number']] },
+        { type: 'select', key: 'chapterSortKey', title: 'Sort chapters', description: 'By source keeps the MangaDex order.', options: [['source', 'By source'], ['number', 'By chapter number'], ['date', 'By upload date'], ['title', 'Alphabetically']] },
+        { type: 'select', key: 'chapterSortDir', title: 'Order', description: 'Which end of the list comes first.', options: [['desc', 'Newest first'], ['asc', 'Oldest first']] },
+        { type: 'select', key: 'chapterDisplay', title: 'Chapter names', description: 'Source title, or just the number.', options: [['source-title', 'Source title'], ['number', 'Chapter number']] },
         { type: 'toggle', key: 'chapterFilterUnread', title: 'Only unread chapters', description: 'Hide chapters you have finished.' },
         { type: 'toggle', key: 'chapterFilterBookmarked', title: 'Only bookmarked chapters', description: 'Show only chapters you bookmarked.' }
       ] },
-      { id: 'progress', title: 'Progress', items: [
-        { type: 'info', title: 'Resume where you left off', value: 'Automatic', description: 'The reader reopens a chapter at the page you stopped on. Finished chapters reopen at page one.' },
-        { type: 'planned', id: 'reading-goals', title: 'Reading goals', description: 'Weekly goals and streaks.' }
-      ] },
-      { id: 'downloads', title: 'Downloads', items: [
+      { id: 'later', title: 'Later', items: [
+        { type: 'planned', id: 'reading-goals', title: 'Reading goals', description: 'Weekly goals and streaks.' },
         { type: 'planned', id: 'wifi-only', title: 'Download on Wi-Fi only', description: 'Save mobile data.' },
         { type: 'planned', id: 'storage-limit', title: 'Storage limit', description: 'Cap how much space downloads can use.' }
       ] }
     ]
   },
   {
-    id: 'content', title: 'Language and content', icon: 'globe', summary: 'Chapter language and content safety',
+    id: 'library', section: 'app', title: 'Library', icon: 'library', summary: 'Sort and backup',
     groups: [
-      { id: 'language', title: 'Language', items: [
-        { type: 'select', key: 'preferredLanguage', title: 'Chapter language', description: 'The language chapter lists open in. You can still change it per title.', options: CHAPTER_LANGUAGES }
+      { id: 'shelf', title: 'Shelf', items: [
+        { type: 'select', key: 'defaultLibrarySort', title: 'Sort library by', description: 'Order used when you open your library.', options: [['recently-updated', 'Recently updated'], ['recently-added', 'Recently added'], ['title', 'Title (A to Z)']] }
       ] },
-      { id: 'safety', title: 'Content safety', items: [
-        { type: 'toggle', key: 'adultContentEnabled', title: 'Adult-content preference', description: 'Off by default and only available in the Android app. This is a preference on this device, not age verification. It adds MangaDex titles rated erotica or pornographic.' },
-        { type: 'info', title: 'Catalogue ratings', valueFrom: 'ratings', description: 'Titles tagged loli or shota are never shown, whatever this setting says.' }
+      { id: 'backup', title: 'Backup and restore', items: [
+        { type: 'action', action: 'export-backup', title: 'Export backup', description: 'Save library, collections and settings as a file.', button: 'Export' },
+        { type: 'action', action: 'import-backup', title: 'Import backup', description: 'Merge a backup file. Downloads are not included.', button: 'Import' }
+      ] },
+      { id: 'collections', title: 'Collections', items: [
+        { type: 'planned', id: 'smart-collections', title: 'Smart collections', description: 'Collections that fill themselves from rules.' },
+        { type: 'planned', id: 'manage-collections', title: 'Manage collections', description: 'Rename, reorder and delete collections.' }
       ] }
     ]
   },
   {
-    id: 'sources', title: 'Sources and connection', icon: 'plug', summary: 'Catalogue sources and API status',
+    id: 'content', section: 'app', title: 'Language and content', icon: 'globe', summary: 'Language and ratings', valueFrom: 'language',
+    groups: [
+      { id: 'language', title: 'Language', items: [
+        { type: 'select', key: 'preferredLanguage', title: 'Chapter language', description: 'Language chapter lists open in.', options: CHAPTER_LANGUAGES }
+      ] },
+      { id: 'safety', title: 'Content safety', items: [
+        { type: 'toggle', key: 'adultContentEnabled', title: 'Adult-content preference', badge: 'Android app', description: 'Off by default. A preference on this device, not age verification. Adds titles rated erotica or pornographic.' },
+        { type: 'info', title: 'Catalogue ratings', valueFrom: 'ratings', description: 'Titles tagged loli or shota are never shown.' }
+      ] }
+    ]
+  },
+  {
+    id: 'account', section: 'connections', title: 'Account and sync', icon: 'cloud', summary: 'AniList and tracking', valueFrom: 'anilistStatus',
+    groups: [
+      { id: 'anilist', title: 'AniList', items: [
+        { type: 'info', title: 'Account', valueFrom: 'anilistStatus' },
+        { type: 'action', action: 'anilist-connect', title: 'Sign in with AniList', description: 'Opens AniList to approve access.', button: 'Sign in', when: 'anilistDisconnected' },
+        { type: 'action', action: 'anilist-register', title: 'Create an AniList account', description: 'Free and optional. Opens anilist.co.', button: 'Register', when: 'anilistDisconnected' },
+        { type: 'toggle', key: 'anilistPushEnabled', title: 'Send changes to AniList', description: 'Status changes you make here are saved there too. Nothing is ever deleted.', when: 'anilistConnected' },
+        { type: 'action', action: 'anilist-sync', title: 'Sync now', description: 'Bring your AniList manga list in.', button: 'Sync', resultId: 'anilistResult', when: 'anilistConnected' },
+        { type: 'info', title: 'Last sync', valueFrom: 'anilistLastSync', when: 'anilistConnected' },
+        { type: 'action', action: 'anilist-apps', title: 'Manage access on AniList', description: 'Revoke this app completely on anilist.co.', button: 'Open', when: 'anilistConnected' },
+        { type: 'action', action: 'anilist-disconnect', title: 'Sign out', description: 'Removes the sign-in from this device only.', button: 'Sign out', danger: true, when: 'anilistConnected' }
+      ] },
+      { id: 'tracking', title: 'Tracking', items: [
+        { type: 'toggle', key: 'trackerAutoUpdate', title: 'Update progress after reading', description: 'Updates AniList when you finish a chapter. Waits on this device if offline. Progress only goes up.' },
+        { type: 'select', key: 'trackerMarkRead', title: 'When marked as read', description: 'Update AniList when you mark chapters read yourself.', options: [['always', 'Always'], ['ask', 'Ask each time'], ['never', 'Never']] }
+      ] },
+      { id: 'advanced', title: 'Advanced sign-in options', collapsed: true, items: [
+        { type: 'action', action: 'anilist-paste-token', title: 'Paste a token instead', description: 'Use this if sign-in does not return to the app.', button: 'Paste', when: 'anilistDisconnected' },
+        { type: 'text', key: 'anilistClientId', title: 'Use my own AniList app ID', description: 'Optional. Create a free app at anilist.co/settings/developer with redirect URL tokyomangalab://anilist-auth, then paste its number. Leave empty to use the built-in app.', inputMode: 'numeric', placeholder: 'App ID', when: 'anilistDisconnected' }
+      ] },
+      { id: 'later', title: 'Later', items: [
+        { type: 'planned', id: 'more-trackers', title: 'More trackers', description: 'MyAnimeList, Kitsu, MangaUpdates and others.' },
+        { type: 'planned', id: 'sign-in', title: 'Tokyo Manga Lab account', description: 'Sync without AniList and apply as a creator.' },
+        { type: 'planned', id: 'profile-details', title: 'Profile details', description: 'Name, avatar and bio.' },
+        { type: 'planned', id: 'cloud-sync', title: 'Cloud sync', description: 'Keep library and progress identical on every device.' }
+      ] }
+    ]
+  },
+  {
+    id: 'sources', section: 'connections', title: 'Sources and connection', icon: 'plug', summary: 'Source and API status',
     groups: [
       { id: 'catalogue', title: 'Catalogue', items: [
-        { type: 'toggle', key: 'enableOnlineSearch', title: 'Online catalogue search', description: 'Allow requests to MangaDex through the catalogue API. Your library still works when this is off.' },
+        { type: 'toggle', key: 'enableOnlineSearch', title: 'Online catalogue search', description: 'Allow requests to MangaDex. Your library works without it.' },
         { type: 'info', title: 'Active source', value: 'MangaDex' },
-        { type: 'planned', id: 'more-sources', title: 'More sources', description: 'Additional sources, added one at a time after review.' }
+        { type: 'planned', id: 'more-sources', title: 'More sources', description: 'Added one at a time, after review.' }
       ] },
       { id: 'connection', title: 'Connection', items: [
         { type: 'info', title: 'API address', value: API_BASE_URL },
@@ -116,56 +153,17 @@ export const SETTINGS_CATEGORIES = Object.freeze([
     ]
   },
   {
-    id: 'privacy', title: 'Privacy and data', icon: 'shield', summary: 'What is stored and where',
+    id: 'privacy', section: 'data', title: 'Privacy and data', icon: 'shield', summary: 'What is stored and where',
     groups: [
       { id: 'storage', title: 'On this device', items: [
-        { type: 'info', title: 'Where your data lives', value: 'This device only', description: 'Library, progress and settings are stored locally, and Tokyo Manga Lab has no account of its own. If you connect AniList, progress you choose to sync is sent to AniList, and backups are files you save yourself.' },
+        { type: 'info', title: 'Where your data lives', value: 'This device only', description: 'No Tokyo Manga Lab account exists. AniList data is sent only if you connect and sync. Backups are files you save yourself.' },
         { type: 'planned', id: 'storage-usage', title: 'Storage usage', description: 'See how much space the app uses.' },
         { type: 'planned', id: 'clear-cache', title: 'Clear cached covers', description: 'Free space without touching your library.' }
       ] }
     ]
   },
   {
-    id: 'account', title: 'Account and sync', icon: 'cloud', summary: 'AniList sync and future accounts',
-    groups: [
-      { id: 'anilist', title: 'AniList', items: [
-        { type: 'info', title: 'Account', valueFrom: 'anilistStatus' },
-        { type: 'text', key: 'anilistClientId', title: 'Use my own AniList app ID (advanced)', description: 'Only needed if this build has none built in, or you want your own. Create a free app at anilist.co/settings/developer, set its redirect URL to tokyomangalab://anilist-auth, then paste the app ID (a number) here.', inputMode: 'numeric', placeholder: 'Number', when: 'anilistDisconnected' },
-        { type: 'action', action: 'anilist-connect', title: 'Sign in with AniList', description: 'Opens AniList. Approve access and you return to this app.', button: 'Sign in', when: 'anilistDisconnected' },
-        { type: 'action', action: 'anilist-paste-token', title: 'Paste a token instead', description: 'Use this if the sign-in does not return to the app.', button: 'Paste', when: 'anilistDisconnected' },
-        { type: 'action', action: 'anilist-register', title: 'Create an AniList account', description: 'Opens anilist.co in your browser. AniList is free and optional.', button: 'Register', when: 'anilistDisconnected' },
-        { type: 'toggle', key: 'anilistPushEnabled', title: 'Send changes to AniList', description: 'When on, status changes you make here are also saved on AniList. Sync never deletes anything on either side.', when: 'anilistConnected' },
-        { type: 'action', action: 'anilist-sync', title: 'Sync now', description: 'Bring your AniList manga list in, and send your changes back when that is on.', button: 'Sync', resultId: 'anilistResult', when: 'anilistConnected' },
-        { type: 'info', title: 'Last sync', valueFrom: 'anilistLastSync', when: 'anilistConnected' },
-        { type: 'action', action: 'anilist-apps', title: 'Manage access on AniList', description: 'Opens your AniList app permissions, where you can revoke this app completely.', button: 'Open', when: 'anilistConnected' },
-        { type: 'action', action: 'anilist-disconnect', title: 'Sign out', description: 'Removes the sign-in from this device. To revoke access completely, remove the app at anilist.co/settings/apps.', button: 'Sign out', danger: true, when: 'anilistConnected' }
-      ] },
-      { id: 'tracking', title: 'Tracking', items: [
-        { type: 'toggle', key: 'trackerAutoUpdate', title: 'Update progress after reading', description: 'When you finish a chapter, AniList is updated straight away if you are signed in and the title is linked. If AniList cannot be reached, the update waits on this device and goes out later. Progress only ever goes up.' },
-        { type: 'select', key: 'trackerMarkRead', title: 'Update progress when marked as read', description: 'What happens on AniList when you mark chapters as read yourself from the chapter list.', options: [['always', 'Always'], ['ask', 'Ask each time'], ['never', 'Never']] },
-        { type: 'info', title: 'AniList', valueFrom: 'anilistStatus', description: 'Open a title and tap Tracking to link it, set its status, chapters, score and dates.' },
-        { type: 'planned', id: 'more-trackers', title: 'More trackers', description: 'MyAnimeList, Kitsu, MangaUpdates and others.' }
-      ] },
-      { id: 'tokyo-account', title: 'Tokyo Manga Lab account', items: [
-        { type: 'planned', id: 'sign-in', title: 'Sign in', description: 'Create an account to sync without AniList and to apply as a creator.' },
-        { type: 'planned', id: 'profile-details', title: 'Profile details', description: 'Name, avatar and bio.' }
-      ] },
-      { id: 'sync', title: 'Cloud sync', items: [
-        { type: 'planned', id: 'cloud-sync', title: 'Cloud sync', description: 'Keep library and progress identical on every device.' }
-      ] }
-    ]
-  },
-  {
-    id: 'notifications', title: 'Notifications', icon: 'bell', summary: 'Chapter alerts and reminders', planned: true,
-    groups: [
-      { id: 'alerts', title: 'Alerts', items: [
-        { type: 'planned', id: 'new-chapters', title: 'New chapters', description: 'Tell me when a followed title updates.' },
-        { type: 'planned', id: 'reminders', title: 'Reading reminders', description: 'A gentle nudge at a time you choose.' }
-      ] }
-    ]
-  },
-  {
-    id: 'about', title: 'About', icon: 'info', summary: 'Version, credits and links',
+    id: 'about', section: 'data', title: 'About', icon: 'info', summary: 'Version, credits and links',
     groups: [
       { id: 'app', title: 'App', items: [
         { type: 'info', title: 'Version', value: `${APP_NAME} ${APP_VERSION}` },
@@ -174,6 +172,15 @@ export const SETTINGS_CATEGORIES = Object.freeze([
       { id: 'links', title: 'Links', items: [
         { type: 'link', title: 'Source code', href: REPO_URL, description: 'View the project on GitHub.' },
         { type: 'link', title: 'MangaDex', href: MANGADEX_URL, description: 'Catalogue data and covers come from MangaDex.' }
+      ] }
+    ]
+  },
+  {
+    id: 'notifications', section: 'later', title: 'Notifications', icon: 'bell', summary: 'Chapter alerts and reminders', planned: true,
+    groups: [
+      { id: 'alerts', title: 'Alerts', items: [
+        { type: 'planned', id: 'new-chapters', title: 'New chapters', description: 'Tell me when a followed title updates.' },
+        { type: 'planned', id: 'reminders', title: 'Reading reminders', description: 'A gentle nudge at a time you choose.' }
       ] }
     ]
   }
@@ -185,6 +192,7 @@ export function findCategory(id) {
 
 export const SETTING_CONDITIONS = Object.freeze(['anilistConnected', 'anilistDisconnected']);
 export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync', 'ratings']);
+export const CATEGORY_VALUES = Object.freeze(['theme', 'readerMode', 'language', 'anilistStatus']);
 
 export function allSettingKeys() {
   const keys = [];

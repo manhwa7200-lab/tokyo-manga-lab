@@ -60,6 +60,7 @@ with sync_playwright() as p:
 
     # --- Paste-token connect, push opt-in prompt
     pg.screenshot(path=S+'/shots/anilist-disconnected.png')
+    pg.evaluate("document.querySelectorAll('details.fold').forEach(d => { d.open = true; })")
     pg.click('[data-action="anilist-paste-token"]'); pg.wait_for_timeout(1200)
     ok(any(t=='prompt' for t,_ in dialogs),'token prompt shown')
     ok(any(t=='confirm' and 'AniList' in m for t,m in dialogs),'push opt-in asked after connect')
@@ -122,7 +123,9 @@ with sync_playwright() as p:
     p2=ctx2.new_page(); p2.on('dialog',lambda d:d.accept())
     p2.goto(U+'#settings/account'); p2.wait_for_timeout(1200)
     p2.click('[data-action="anilist-connect"]'); p2.wait_for_timeout(500)
-    ok('toast' and p2.evaluate("window.__opened")is None,'no sign-in without a client id')
+    ok('client_id=44302' in (p2.evaluate("window.__opened") or ''),'sign-in uses the built-in client id when none is typed')
+    p2.evaluate("window.__opened=null")
+    p2.evaluate("document.querySelectorAll('details.fold').forEach(d => { d.open = true; })")
     p2.fill('[data-setting="anilistClientId"]','12345'); p2.keyboard.press('Tab'); p2.wait_for_timeout(500)
     p2.click('[data-action="anilist-connect"]'); p2.wait_for_timeout(600)
     opened=p2.evaluate("window.__opened"); print('OPENED',opened)

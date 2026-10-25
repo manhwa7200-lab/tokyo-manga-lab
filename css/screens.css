@@ -50,7 +50,7 @@
 .chart-column .bar { width: min(100%, 28px); min-height: 3px; border-radius: 7px 7px 3px 3px; background: var(--accent); }
 .chart-column small { font-size: .62rem; color: var(--muted); }
 .chart-empty { padding: 16px; border-radius: var(--radius-m); background: var(--raised); color: var(--muted); font-size: .8rem; }
-.roadmap { margin-top: 28px; border-radius: var(--radius-l); background: var(--surface); }
+.roadmap { margin-top: 26px; border-radius: var(--radius-l); background: var(--surface); }
 .roadmap summary { display: flex; align-items: center; gap: 10px; padding: 14px 16px; list-style: none; cursor: pointer; font-weight: 650; font-size: .86rem; color: var(--muted); }
 .roadmap summary::-webkit-details-marker { display: none; }
 .roadmap summary .icon:last-child { margin-left: auto; transition: transform .2s; }
@@ -180,3 +180,36 @@
 .track-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .track-find .link-search { display: flex; gap: 8px; margin: 10px 0; }
 .track-find .link-search .field { flex: 1; min-width: 0; }
+
+/* Settings and profile: one comfortable column on wide screens */
+.narrow { max-width: 720px; margin-inline: auto; }
+.page-head.with-icon { align-items: center; justify-content: flex-start; gap: 14px; }
+.head-icon { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); font-size: 1.15rem; }
+.page-head.with-icon h1 { margin-bottom: 2px; font-size: 1.6rem; }
+.settings-search { position: relative; margin: 0 0 4px; }
+.settings-search .field { padding-left: 42px; }
+.settings-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; display: grid; }
+#settingsResults[hidden], #settingsCategories[hidden] { display: none; }
+.badge-note { display: inline-flex; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: .64rem; font-weight: 700; letter-spacing: .01em; }
+.row-stack { flex-direction: column; align-items: stretch; gap: 10px; }
+.row-stack .row-copy { flex: none; }
+.row-stack .text-field { width: 100%; }
+.row-trail .row-value + .icon { margin-left: 2px; }
+a.row .row-trail { color: var(--faint); }
+.count-pill { margin-left: 2px; padding: 1px 8px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: .68rem; font-weight: 700; }
+.fold { margin-top: 26px; border-radius: var(--radius-l); background: var(--surface); }
+.fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 0 16px; list-style: none; cursor: pointer; font-weight: 650; font-size: .88rem; color: var(--muted); }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary .icon { transition: transform .2s; }
+.fold[open] > summary .icon { transform: rotate(90deg); }
+.fold > .group { border-radius: 0 0 var(--radius-l) var(--radius-l); background: var(--raised); }
+.fold > .group .row + .row { border-top-color: var(--line); }
+.roadmap summary .count-pill { margin-left: 0; }
+.roadmap .row-copy small { display: block; }
+.row-result:empty { display: none; }
+.row-result { padding: 0 16px 14px; margin-top: -6px; }
+.login-card { margin: 16px 0 4px; }
+@media (min-width: 760px) { .row { min-height: 68px; } }
+.login-safety, .login-note { padding: 0; background: none; font-size: .78rem; line-height: 1.45; }
+.login-card-head p { font-size: .84rem; }
+.login-card-actions .button-subtle { margin-left: auto; }

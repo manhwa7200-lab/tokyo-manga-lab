@@ -1,6 +1,6 @@
 # Tokyo Manga Lab - build info
 
-Version: 0.9.4
+Version: 0.9.5
 Milestone: Chapter list options and AniList tracking
 
 See `CHANGELOG.md` for what changed in each version and `docs/` for the design notes.
