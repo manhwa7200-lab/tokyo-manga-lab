@@ -48,10 +48,10 @@ This document specifies the approved conceptual model. It is not a command to cr
 `id`, `fileName`, `mimeType`, `fileSizeBytes`, `checksum`, `storageBackend`, `storageKey`, `importedAt`, `lastVerifiedAt`, `availabilityStatus`. Keep binary file bytes separate from metadata rows; support missing-file detection.
 
 ### `downloadJobs`
-`id`, `contentItemId`, `chapterRecordId`, `status` (`queued|downloading|completed|failed|cancelled`), `bytesDownloaded`, `totalBytes`, `retryCount`, `lastError`, `createdAt`, `updatedAt`.
+One row per chapter (since 0.11.0): `id` (the MangaDex chapter id), `chapterId`, `contentItemId`, `mangaTitle`, `coverUrl`, `chapterNumber`, `volumeNumber`, `title`, `language`, `groups`, `quality` (`data|data-saver`), `status` (`queued|downloading|done|failed`), `donePages`, `pageCount`, `bytes`, `lastError`, `order`, `createdAt`, `updatedAt`, `completedAt`. The page images are not in this store: they are in the separate IndexedDB database `tokyo-manga-lab-pages` (see `docs/DOWNLOADS.md`). Not part of backups.
 
 ### `downloadedAssets`
-`id`, `chapterRecordId`, `assetId`, `storageKey`, `byteSize`, `checksum`, `downloadedAt`, `lastAccessedAt`.
+Unused. Page bytes live in the `tokyo-manga-lab-pages` database instead.
 
 ### `appSettings`
 Key/value preferences for appearance, reader, default library sorting, privacy, content safety, storage and sync. Validate known keys and values; adult-content preference defaults OFF.

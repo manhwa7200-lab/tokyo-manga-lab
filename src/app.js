@@ -25,7 +25,7 @@ import { featuresFor } from './features/feature-registry.js';
 import { mountReader, renderReaderShell } from './features/reader/reader-view.js';
 import { isChapterId, normalizePagesPayload } from './features/reader/reader-pages.js';
 import { resetTips } from './features/reader/reader-features.js';
-import { chaptersBefore, filterChapters, normalizeChapterView, scanlatorsOf, sortChapters } from './features/chapters/chapter-view.js';
+import { chapterNumberValue, chaptersBefore, filterChapters, normalizeChapterView, scanlatorsOf, sortChapters } from './features/chapters/chapter-view.js';
 import { renderChapterOptions, renderChapterRow, renderChapterToolbar } from './features/chapters/chapter-ui.js';
 import { listBookmarkedChapterIds, listChapterPages, listReadChapterIds, setBookmark, setChaptersRead } from './data/repositories/chapter-marks-repository.js';
 import { renderTrackingPanel } from './features/tracking/tracking-ui.js';
@@ -38,6 +38,14 @@ import { clearAuthAttempt, getAccount, getAuthAttempt, markAuthAttempt } from '.
 import { closeAuthPage, isNativeApp, listenForAppLinks, openAuthPage } from './features/anilist/anilist-native.js';
 import { connectWithToken, describeAccount, describeSummary, disconnect as disconnectAniList, flushOutbox, notifyLocalChange, refreshProfile, runSync } from './features/anilist/anilist-sync.js';
 import { THEMES, findTheme, nextTheme } from './features/theme/themes.js';
+import { createDownloadManager } from './features/downloads/download-manager.js';
+import { createDownloadController } from './features/downloads/download-controller.js';
+import { createJobRepository } from './features/downloads/download-repository.js';
+import { createPageStore } from './features/downloads/page-store.js';
+import { connectionInfo, fetchImageBlob } from './features/downloads/download-fetch.js';
+import { formatBytes, jobLabel } from './features/downloads/download-plan.js';
+import { sendReport } from './features/reader/reader-report.js';
+import { attachKeepAlive } from './features/downloads/keep-alive.js';
 import { profileIsStale } from './features/anilist/anilist-profile.js';
 
 const root = document.getElementById('appView');
@@ -70,6 +78,35 @@ const READER_CONTEXT_KEY = 'tml-reader-context';
 
 function renderReader() { return renderReaderShell(); }
 
+// ---- Downloads ---------------------------------------------------------------------------------
+// The queue lives here for the whole session. Pages come from MangaDex's image servers, never through the Worker.
+async function loadOnlinePages(id, { signal } = {}) {
+  const adapter = sourceRegistry.get('mangadex');
+  if (!adapter?.chapterPages) throw new Error('This source cannot provide chapter pages.');
+  return normalizePagesPayload(await adapter.chapterPages(id, { signal }));
+}
+
+const downloads = createDownloadManager({
+  store: createPageStore(), repo: createJobRepository(), loadPages: loadOnlinePages, fetchImage: fetchImageBlob, report: sendReport,
+  getSettings: () => state.settings, getConnection: () => connectionInfo()
+});
+let dlc = null; // the download controller, created once the page is ready
+
+const downloadGroupKey = job => job.contentItemId || `title:${job.mangaTitle}`;
+
+function readDownloaded(chapterId) {
+  const done = downloads.snapshot().jobs.filter(job => job.status === 'done');
+  const job = done.find(row => row.id === chapterId);
+  if (!job) { toast('That chapter is no longer saved on this phone.'); return; }
+  const rank = row => { const value = chapterNumberValue({ chapterNumber: row.chapterNumber }); return value === null ? -Infinity : value; };
+  const chapters = done.filter(row => downloadGroupKey(row) === downloadGroupKey(job)).sort((a, b) => rank(b) - rank(a))
+    .map(row => ({ id: row.id, number: row.chapterNumber ?? null, label: jobLabel(row), pages: row.pageCount, groups: row.groups || [] }));
+  state.readerContext = { contentItemId: job.contentItemId || null, title: job.mangaTitle, chapters, fromDownloads: true };
+  storeReaderContext(state.readerContext);
+  state.readerReturnHash = '#downloads';
+  window.location.hash = `#read/${chapterId}`;
+}
+
 function readStoredReaderContext(chapterId) {
   try {
     const stored = JSON.parse(sessionStorage.getItem(READER_CONTEXT_KEY) || 'null');
@@ -101,11 +138,8 @@ function mountCurrentReader() {
     chapterId,
     context,
     settings: state.settings,
-    loadPages: async (id, { signal } = {}) => {
-      const adapter = sourceRegistry.get('mangadex');
-      if (!adapter?.chapterPages) throw new Error('This source cannot provide chapter pages.');
-      return normalizePagesPayload(await adapter.chapterPages(id, { signal }));
-    },
+    // A chapter saved on this phone opens from the saved pages (no network). Anything else loads from MangaDex.
+    loadPages: async (id, { signal } = {}) => (await downloads.openChapter(id).catch(() => null)) || loadOnlinePages(id, { signal }),
     onClose: closeReader,
     onOpenSettings: () => { window.location.hash = '#settings/reading'; },
     onOpenChapter: id => { window.location.replace(`#read/${id}`); },
@@ -118,7 +152,7 @@ function mountCurrentReader() {
 
 function closeReader() {
   const returnTo = state.readerReturnHash || '#library';
-  const itemId = state.readerContext?.contentItemId || null;
+  const itemId = state.readerContext?.fromDownloads ? null : (state.readerContext?.contentItemId || null);
   unmountReader();
   window.location.hash = returnTo === '#read' || returnTo.startsWith('#read/') ? '#library' : returnTo;
   // Reopen the title sheet the reader was started from, after the screen behind it has rendered.
@@ -410,15 +444,10 @@ async function renderLibrary() {
 }
 
 async function renderDownloads() {
-  const rows = await (await import('./data/database.js')).getAllRecords('downloadJobs');
-  const info = [
-    { icon: 'database', title: 'Local storage', description: 'Library, progress and settings live on this device. Covers are cached so they load faster.' },
-    { icon: 'clock', title: 'Download queue', description: `${rows.length} task${rows.length === 1 ? '' : 's'} recorded on this device.` }
-  ];
   return `<section>
-    <div class="page-head"><div><h1>Downloads</h1><p>Chapters are read online. Offline reading is planned.</p></div></div>
-    <div class="group">${info.map(row => listRow(row)).join('')}</div>
-    ${rows.length ? `<h2 class="group-title">Tasks</h2><div class="library-list">${rows.map(job => `<div class="library-card"><div class="library-cover library-cover-fallback">${icon('download')}</div><div class="library-info"><h3>${escapeHtml(job.status || 'Task')}</h3><p>${escapeHtml(job.lastError || 'Download task')}</p><span class="pill-label">${Number(job.bytesDownloaded || 0).toLocaleString()} bytes</span></div></div>`).join('')}</div>` : renderEmpty('Nothing downloaded yet', 'Download status and storage use will show here.')}
+    <div class="page-head"><div><h1>Downloads</h1><p>Chapters saved on this phone for offline reading.</p></div></div>
+    <div id="downloadsBody" class="downloads-body">${dlc ? dlc.screenMarkup() : ''}</div>
+    <p class="footer-note">Saved chapters stay on this phone for your own reading. They are not shared, backed up or uploaded anywhere. To download, open a title and tap Download above its chapters.</p>
     ${renderRoadmap('downloads')}
   </section>`;
 }
@@ -620,6 +649,7 @@ function queueAniListPush(contentItemId) {
 
 function dynamicValue(name) {
   if (name === 'anilistStatus') return state.anilist.status.label;
+  if (name === 'downloadUsage') { const { usage } = downloads.snapshot(); return `${formatBytes(usage.bytes)} · ${usage.chapters} chapter${usage.chapters === 1 ? '' : 's'}`; }
   if (name === 'ratings') return adultActive() ? 'Includes adult (Android app only)' : 'Safe and suggestive';
   if (name === 'anilistLastSync') {
     const last = state.anilist.account?.lastSync;
@@ -906,12 +936,13 @@ function renderDetailsContent(rawItem) {
   const fallbackNote = item.usedFallback?.length ? `<p class="muted">Filled in from MangaDex because AniList has none: ${escapeHtml(item.usedFallback.join(', '))}.</p>` : '';
   const metadataNotice = state.detailsMetadataError ? `<div class="notice warning"><strong>Using cached metadata.</strong> ${escapeHtml(state.detailsMetadataError)}</div>` : '';
   const canRead = Boolean(sourceRegistry.get('mangadex')?.capabilities?.chapterContent);
+  const canDownload = Boolean(sourceRegistry.get('mangadex')?.capabilities?.offlineDownloads) && state.detailsChapters.some(chapter => Number(chapter.pages) > 0);
   const view = currentChapterView();
   const listed = visibleChapters();
   const shownRows = listed.slice(0, state.chapterShown);
   const chapterRows = shownRows.map(chapter => renderChapterRow({
     chapter, display: view.display, read: state.detailsRead.has(chapter.externalId), bookmarked: state.detailsBookmarks.has(chapter.externalId),
-    menuOpen: state.chapterMenuId === chapter.externalId, canRead, sourceUrl: safeMangaDexChapterUrl(chapter.sourceUrl), progressPage: state.detailsPages.get(chapter.externalId) || 0
+    menuOpen: state.chapterMenuId === chapter.externalId, canRead, canDownload, downloadStatus: downloads.statusOf(chapter.externalId), sourceUrl: safeMangaDexChapterUrl(chapter.sourceUrl), progressPage: state.detailsPages.get(chapter.externalId) || 0
   })).join('');
   let chapterNotice = '';
   if (state.detailsLoadingChapters) chapterNotice = '<div class="empty-state chapter-empty"><span class="spinner"></span><strong>Loading chapter list…</strong><span>Fetching chapter metadata only.</span></div>';
@@ -919,7 +950,7 @@ function renderDetailsContent(rawItem) {
   else if (!state.detailsChapters.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters in this result.</strong><span>Try another language or open the source page.</span></div>';
   else if (!listed.length) chapterNotice = '<div class="empty-state chapter-empty"><strong>No chapters match your filters.</strong><button class="button button-small" type="button" data-action="chapter-filters-clear">Clear filters</button></div>';
   const hasChapters = state.detailsChapters.length > 0;
-  const toolbar = hasChapters ? renderChapterToolbar({ view, open: state.chapterOptionsOpen, shown: listed.length, total: state.detailsChapterTotal, loaded: state.detailsChapters.length }) : '';
+  const toolbar = hasChapters ? renderChapterToolbar({ view, open: state.chapterOptionsOpen, shown: listed.length, total: state.detailsChapterTotal, loaded: state.detailsChapters.length, canDownload, downloaded: state.detailsChapters.filter(chapter => downloads.isDownloaded(chapter.externalId)).length }) : '';
   const options = hasChapters && state.chapterOptionsOpen ? renderChapterOptions({ view, tab: state.chapterOptionsTab, scanlators: scanlatorsOf(state.detailsChapters) }) : '';
   const more = [
     listed.length > shownRows.length ? `<button class="button chapter-more-btn" type="button" data-action="chapter-show-more">Show ${Math.min(60, listed.length - shownRows.length)} more</button>` : '',
@@ -928,7 +959,7 @@ function renderDetailsContent(rawItem) {
   const trackLabel = state.track?.row?.onList ? `Tracking · ${trackStatusLabel(state.track.row.status)}${state.track.row.progress ? ` · ch. ${state.track.row.progress}` : ''}` : 'Tracking';
   const trackButton = `<button class="button-subtle" type="button" data-action="track-toggle" aria-expanded="${Boolean(state.track?.open)}">${escapeHtml(trackLabel)}</button>`;
   const trackingPanel = state.track?.open ? renderTrackingPanel({ track: state.track, item, coverHtml: media => coverMarkup(media, true) }) : '';
-  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item, false, state.detailsLink?.fallback?.coverUrl)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}${trackButton}</div>${trackingPanel}${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${toolbar}${options}${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${more ? `<div class="chapter-more-row">${more}</div>` : ''}</section><p class="footer-note">Chapter pages load directly from MangaDex. Tokyo Manga Lab does not download, store or re-host them.</p>`;
+  document.getElementById('detailsContent').innerHTML = `<div class="details-layout"><div class="details-cover">${coverMarkup(item, false, state.detailsLink?.fallback?.coverUrl)}</div><div><span class="eyebrow">${escapeHtml(item.sourceId === 'mangadex' ? 'MangaDex title' : item.sourceId === 'anilist' ? (state.detailsLink ? 'AniList title · chapters from MangaDex' : 'AniList title') : 'Local library item')}</span><h2 id="detailsTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(titleAuthor(item))}${item.releaseYear ? ` · ${escapeHtml(item.releaseYear)}` : ''}</p><div class="tag-row">${(item.tags || []).slice(0, 8).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div><p>${escapeHtml(item.description || 'No synopsis is available in the catalogue response.')}</p><p class="muted">Catalogue status: ${escapeHtml(item.publicationStatus || 'unknown')} · Rating: ${escapeHtml(item.contentRating || 'unknown')}</p>${fallbackNote}${metadataNotice}</div></div><div class="details-actions">${entry ? `<button class="button-subtle" data-action="mark-reading" data-id="${escapeHtml(item.id)}">${entry.personalStatus === 'reading' ? 'Currently reading' : 'Mark as reading'}</button>` : `<button class="button-subtle" data-action="save" data-id="${escapeHtml(item.id)}">Add to library</button>`}${sourceLink}${trackButton}</div>${trackingPanel}${linkable && (!state.detailsLink || state.link.changing) ? renderLinkPanel(rawItem) : ''}<section class="chapter-panel" ${linkable && (!state.detailsLink || state.link.changing) ? 'hidden' : ''}>${linkable && state.detailsLink ? renderLinkBanner(state.detailsLink) : ''}<div class="section-topline chapter-heading"><div><h3>Chapters</h3><p>Tap Read to open a chapter here. The ↗ button opens it on MangaDex.</p></div><label class="chapter-language-label">Language <select class="select-field" data-action="chapter-language" aria-label="Chapter language">${chapterLanguageOptions()}</select></label></div>${toolbar}${options}${state.detailsLoading ? '<p class="muted">Refreshing title metadata…</p>' : ''}${chapterNotice}${chapterRows ? `<div class="chapter-list">${chapterRows}</div>` : ''}${more ? `<div class="chapter-more-row">${more}</div>` : ''}</section><p class="footer-note">Chapter pages load directly from MangaDex. Chapters you download are saved only on this phone for your own reading. Tokyo Manga Lab never hosts, shares or uploads them.</p>`;
 }
 
 
@@ -1348,6 +1379,7 @@ function closeDetails({ leaving = false } = {}) {
 }
 
 function handleDetailsPopState() {
+  if (dlc?.handlePopState()) return; // Back closed the download picker only; the title sheet stays open
   const dialog = document.getElementById('detailsDialog');
   if (state.detailsHistory && dialog?.open) finishCloseDetails();
   else state.detailsHistory = false;
@@ -1488,6 +1520,7 @@ async function handleSettingChange(input) {
     loadSearch(state.query, 1);
     toast(value ? 'Adult titles enabled in this app.' : 'Adult titles hidden.');
   } else toast('Setting saved on this device.');
+  if (key.startsWith('download')) downloads.kick(); // a changed rule (Wi-Fi only, storage limit) may let a waiting queue continue
 }
 
 async function checkApi() {
@@ -1510,6 +1543,7 @@ async function checkApi() {
 
 async function handleAction(action, target) {
   const id = target.dataset.id;
+  if (action.startsWith('download-') && dlc && await dlc.handleAction(action, target)) return;
   switch (action) {
     case 'toggle-theme': {
       const theme = nextTheme(state.settings?.theme);
@@ -1573,6 +1607,7 @@ async function handleAction(action, target) {
     case 'export-backup': await downloadBackup(); break;
     case 'import-backup': document.getElementById('backupFileInput').click(); break;
     case 'open-settings': window.location.hash = '#settings'; break;
+    case 'open-downloads': window.location.hash = '#downloads'; break;
     case 'planned-feature': toast(`${target.dataset.title || 'This feature'} is planned and not available yet.`); break;
     case 'check-api': await checkApi(); break;
     case 'anilist-connect': await startAniListSignIn(); break;
@@ -1599,6 +1634,8 @@ function bindUiEvents() {
   });
 
   document.addEventListener('submit', event => {
+    const downloadForm = event.target.closest('form[data-form="download-jump"]');
+    if (downloadForm) { event.preventDefault(); dlc?.handleSubmit(downloadForm); return; }
     const collectionForm = event.target.closest('form[data-form="collection-new"]');
     if (collectionForm) { event.preventDefault(); submitNewCollection(collectionForm); return; }
     const trackForm = event.target.closest('form[data-form="track-search"]');
@@ -1660,8 +1697,20 @@ function bindUiEvents() {
   // Esc closes through the same path, so the cleanup and the history entry stay in step.
   document.getElementById('detailsDialog').addEventListener('cancel', event => { event.preventDefault(); closeDetails(); });
   window.addEventListener('popstate', handleDetailsPopState);
+  window.addEventListener('offline', () => downloads.kick());
+  navigator.connection?.addEventListener?.('change', () => downloads.kick()); // Wi-Fi <-> mobile data: the queue re-checks its rules
+  const downloadDialog = document.getElementById('downloadDialog');
+  dlc = createDownloadController({
+    downloads, dialog: downloadDialog, getSettings: () => state.settings, getConnection: () => connectionInfo(), toast,
+    getDetails: () => ({ item: currentDetailsItem(), chapters: state.detailsChapters, hasMore: Boolean(state.detailsChapterNext), loading: state.detailsLoadingChapters }),
+    loadRestChapters: async () => { const sourceId = chapterSourceFor(currentDetailsItem()); if (sourceId && state.detailsChapterNext) await loadDetailsChapters(sourceId, state.detailsChapterNext); },
+    redrawDetails: () => { if (document.getElementById('detailsDialog')?.open) redrawDetails(); },
+    goToDownloads: () => { closeDetails({ leaving: true }); window.location.hash = '#downloads'; },
+    readDownloaded, groupKeyToIds: key => downloads.snapshot().jobs.filter(job => job.status === 'done' && downloadGroupKey(job) === key).map(job => job.id)
+  });
+  downloadDialog.addEventListener('cancel', event => { event.preventDefault(); dlc.closePicker(); });
   // Changes that were waiting for AniList go out as soon as the phone is back online.
-  window.addEventListener('online', () => { checkConnection(); if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message)); });
+  window.addEventListener('online', () => { downloads.kick(); checkConnection(); if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message)); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.getElementById('connectionStatus')?.dataset.state === 'offline') checkConnection(); });
   // The reader tells us when a chapter was finished.
   document.addEventListener('tml:chapter-read', event => { onChapterRead(event.detail).catch(error => console.warn('Tracking after reading failed:', error)); });
@@ -1693,6 +1742,8 @@ async function initialize() {
     const migration = await migrateLegacyLocalStorage();
     if (migration.migrated) console.info(`Migrated ${migration.count} local library entries from the previous version.`);
     state.settings = await loadSettings();
+    await downloads.init().catch(error => console.warn('Downloads could not be loaded:', error));
+    attachKeepAlive(downloads, window.Capacitor?.Plugins?.TmlDownloads); // only does anything in an APK built with the optional Kotlin plugin
     configureAdult(state.settings.adultContentEnabled);
     applyTheme();
     await refreshLibraryIndex();

@@ -1,0 +1,79 @@
+/* Add to Download picker (full screen) and the Downloads screen. Colours come from the theme tokens. */
+.download-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; background: var(--bg); color: var(--text); overflow: hidden; }
+.download-dialog[open] { display: flex; flex-direction: column; }
+.download-dialog::backdrop { background: var(--bg); }
+.dl-top { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 4px; padding: calc(8px + env(safe-area-inset-top)) 8px 8px; }
+.dl-top h2 { margin: 0; font-size: 1.05rem; text-align: center; }
+.dl-top .icon-button { background: transparent; }
+.dl-queue-btn { position: relative; }
+.dl-badge { position: absolute; top: 2px; right: 0; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: .65rem; font-weight: 800; display: grid; place-items: center; }
+.dl-sub { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px var(--gutter) 8px; }
+.dl-sub-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .85rem; font-weight: 650; }
+.dl-sub-tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.dl-pill { min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--raised); color: var(--text); font: inherit; font-size: .82rem; font-weight: 650; cursor: pointer; }
+.dl-pill[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
+.dl-sort { background: transparent; font-size: 1.2rem; color: var(--text); }
+.dl-jump { display: flex; gap: 8px; padding: 0 var(--gutter) 10px; }
+.dl-jump .field { flex: 1; min-width: 0; }
+.dl-list { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 0 0 8px; }
+.dl-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 58px; padding: 10px var(--gutter); border: 0; border-bottom: 1px solid var(--line-soft); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dl-row:active { background: var(--raised); }
+.dl-row.is-picked { background: var(--accent-soft); }
+.dl-row.is-locked { cursor: default; }
+.dl-row.is-flash { animation: dl-flash 1.2s ease; }
+@keyframes dl-flash { 0%, 60% { background: var(--accent-soft); } 100% { background: transparent; } }
+.dl-check { flex: 0 0 26px; width: 26px; height: 26px; display: grid; place-items: center; border: 2px solid var(--faint); border-radius: 50%; color: transparent; transition: background .12s, border-color .12s; }
+.dl-check svg { width: 15px; height: 15px; }
+.dl-row.is-picked .dl-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.dl-row.is-locked .dl-check { opacity: .35; }
+.dl-row[data-state="done"] .dl-check { border-color: var(--good); }
+.dl-row-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.dl-row-copy strong { font-size: .95rem; }
+.dl-row-copy em { margin-left: 6px; font-style: normal; font-weight: 500; font-size: .75rem; color: var(--muted); }
+.dl-row-copy small { color: var(--muted); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-chip { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 3px 9px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: .68rem; font-weight: 650; }
+.dl-chip[data-state="done"] { color: var(--good); }
+.dl-chip[data-state="failed"] { color: var(--danger); }
+.dl-more { margin: 14px var(--gutter); width: calc(100% - 2 * var(--gutter)); }
+.dl-empty { margin: 40px var(--gutter); }
+.dl-bottom { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface); }
+.dl-bottom-info { min-width: 0; display: grid; gap: 1px; }
+.dl-bottom-info strong { font-size: .9rem; }
+.dl-bottom-info small { color: var(--muted); font-size: .7rem; line-height: 1.25; }
+.dl-bottom .button, .dl-bottom .button-primary { min-height: 44px; white-space: nowrap; }
+.dl-go:disabled, .dl-all:disabled { opacity: .45; cursor: not-allowed; }
+@media (min-width: 760px) { .download-dialog { width: min(560px, 100vw); height: min(86dvh, 820px); margin: auto; border-radius: 22px; box-shadow: var(--shadow); } .download-dialog::backdrop { background: #05040bcc; } }
+@media (prefers-reduced-motion: reduce) { .dl-row.is-flash { animation: none; background: var(--accent-soft); } .dl-check { transition: none; } }
+
+/* Downloads screen */
+.dl-summary { display: grid; gap: 10px; padding: 16px; border-radius: var(--radius-m); background: var(--surface); }
+.dl-summary strong { font-size: 1.5rem; }
+.dl-summary small { display: block; color: var(--muted); font-size: .8rem; }
+.dl-bar { height: 6px; border-radius: 4px; background: var(--raised-2); overflow: hidden; }
+.dl-bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width .3s; }
+.dl-queue-tools { display: flex; gap: 8px; margin: 0 0 10px; }
+.dl-jobs, .dl-groups { display: grid; gap: 10px; }
+.dl-job { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: var(--radius-m); background: var(--raised); }
+.dl-job-copy { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.dl-job-copy strong, .dl-job-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-job-copy span, .dl-job-copy small { color: var(--muted); font-size: .78rem; }
+.dl-job-copy small.is-error { color: var(--danger); white-space: normal; }
+.dl-job-actions { display: flex; flex-direction: column; gap: 6px; }
+.dl-group { border-radius: var(--radius-m); background: var(--raised); overflow: hidden; }
+.dl-group summary { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; list-style: none; }
+.dl-group summary::-webkit-details-marker { display: none; }
+.dl-group[open] summary > svg { transform: rotate(90deg); }
+.dl-group-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.dl-group-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-group-copy small { color: var(--muted); font-size: .78rem; }
+.dl-thumb { flex: 0 0 44px; width: 44px; height: 62px; border-radius: 8px; object-fit: cover; background: var(--raised-2); }
+.dl-thumb-empty { display: grid; place-items: center; color: var(--muted); }
+.dl-chapters { border-top: 1px solid var(--line-soft); }
+.dl-chapter { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
+.dl-chapter-open { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 12px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dl-chapter-open small { color: var(--muted); font-size: .75rem; }
+.dl-group-foot { padding: 10px 14px; }
+.dl-delete-all { margin: 20px 0 8px; }
+.chapter-download-btn { gap: 6px; }
+.chapter-saved { color: var(--good); }
+@media (prefers-reduced-motion: reduce) { .dl-bar span { transition: none; } }

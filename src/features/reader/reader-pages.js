@@ -37,18 +37,23 @@ export function pickQuality(pages, preferred) {
 }
 
 export function buildPageUrls(pages, preferred) {
+  if (pages?.offline) return [...pages.urls]; // a downloaded chapter: blob addresses made from the saved pages
   const quality = pickQuality(pages, preferred);
   const names = quality === 'data' ? pages.data : pages.dataSaver;
   return names.map(name => `${pages.baseUrl}/${quality}/${encodeURIComponent(pages.hash)}/${encodeURIComponent(name)}`);
 }
 
 export function pagesExpired(pages, now = Date.now()) {
+  if (pages?.offline) return false; // saved pages never expire
   return !pages || now - Number(pages.fetchedAt || 0) >= PAGE_URL_LIFETIME_MS;
 }
 
 // MangaDex asks clients to report every image fetched from a node that is not on mangadex.org.
 export function shouldReport(imageUrl) {
-  try { return !new URL(imageUrl).hostname.toLowerCase().endsWith('mangadex.org'); } catch { return false; }
+  try {
+    const url = new URL(imageUrl);
+    return url.protocol === 'https:' && !url.hostname.toLowerCase().endsWith('mangadex.org'); // blob: pages of a download are never reported
+  } catch { return false; }
 }
 
 export function clampPage(index, total) {

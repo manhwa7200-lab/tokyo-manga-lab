@@ -13,7 +13,7 @@ Legacy MangaDex search response retained for existing frontend compatibility. `p
 All v1 success responses include `meta.apiVersion = "1"` and a `requestId`. Errors use `{ error: { code, message }, meta }`.
 
 ### `GET /api/v1/sources`
-Returns source IDs and capability flags. For the current connector, `search`, `titleDetails`, `chapters` and `chapterContent` are supported; `offlineDownloads` is false. `chapterContent` means the Worker can return the *addresses* of chapter pages; it never relays image bytes.
+Returns source IDs and capability flags. For the current connector, `search`, `titleDetails`, `chapters` and `chapterContent` are supported; the Worker's `offlineDownloads` flag is false because the Worker never downloads or stores anything; the app saves chapters itself (`docs/DOWNLOADS.md`). `chapterContent` means the Worker can return the *addresses* of chapter pages; it never relays image bytes.
 
 ### `GET /api/v1/search?query={query}&type=manga&page={page}`
 Returns `{ data: ContentItem[], pagination, meta }`. The normalized ContentItem includes `sourceId`, `externalId`, `contentType`, `title`, `alternateTitles`, `description`, `coverUrl`, `authors`, `artists`, `genres`, `tags`, `publicationStatus`, `releaseYear`, `language`, `sourceUrl`, and `contentRating`.

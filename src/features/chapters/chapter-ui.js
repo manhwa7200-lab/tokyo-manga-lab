@@ -26,22 +26,23 @@ export function renderChapterOptions({ view, tab, scanlators }) {
   return `<div class="chapter-options" id="chapterOptions">${bar}<div class="opt-body">${body}</div></div>`;
 }
 
-export function renderChapterToolbar({ view, open, shown, total, loaded }) {
+export function renderChapterToolbar({ view, open, shown, total, loaded, canDownload = false, downloaded = 0 }) {
   const filtered = viewIsActive(view);
   const countText = filtered ? `${shown.toLocaleString()} of ${loaded.toLocaleString()} shown` : `${Math.max(total, loaded).toLocaleString()} chapters`;
-  return `<div class="chapter-toolbar"><strong class="chapter-count">${escapeHtml(countText)}</strong><div class="chapter-tools">${filtered ? '<button class="button button-small" type="button" data-action="chapter-filters-clear">Clear filters</button>' : ''}<button class="icon-button ${open || filtered ? 'is-active' : ''}" type="button" data-action="chapter-options-toggle" aria-expanded="${open}" aria-controls="chapterOptions" aria-label="Filter, sort and display options" title="Filter, sort and display">${icon('sliders')}</button></div></div>`;
+  return `<div class="chapter-toolbar"><strong class="chapter-count">${escapeHtml(countText)}</strong><div class="chapter-tools">${canDownload ? `<button class="button button-small chapter-download-btn" type="button" data-action="download-open" aria-label="Download chapters for offline reading">${icon('download', 'icon-sm')}Download${downloaded ? ` · ${downloaded}` : ''}</button>` : ''}${filtered ? '<button class="button button-small" type="button" data-action="chapter-filters-clear">Clear filters</button>' : ''}<button class="icon-button ${open || filtered ? 'is-active' : ''}" type="button" data-action="chapter-options-toggle" aria-expanded="${open}" aria-controls="chapterOptions" aria-label="Filter, sort and display options" title="Filter, sort and display">${icon('sliders')}</button></div></div>`;
 }
 
 // One chapter. `read` and `bookmarked` come from the marks stored on this device.
-export function renderChapterRow({ chapter, display, read, bookmarked, menuOpen, canRead, sourceUrl, progressPage }) {
+export function renderChapterRow({ chapter, display, read, bookmarked, menuOpen, canRead, sourceUrl, progressPage, downloadStatus = null, canDownload = false }) {
   const id = escapeHtml(chapter.externalId);
   const name = chapterLabel(chapter, display);
-  const detail = [chapter.language || 'Unknown language', `${Number(chapter.pages) || 0} pages`, chapter.publishedAt ? formatDate(chapter.publishedAt) : '', !read && progressPage > 0 ? `Page ${progressPage + 1}` : ''].filter(Boolean).join(' · ');
-  const mark = `${read ? '<span class="chapter-state" title="Read">✓</span>' : '<span class="chapter-dot" title="Unread"></span>'}${bookmarked ? `<span class="chapter-flag" title="Bookmarked">${icon('bookmarkFill')}</span>` : ''}`;
+  const detail = [chapter.language || 'Unknown language', `${Number(chapter.pages) || 0} pages`, chapter.publishedAt ? formatDate(chapter.publishedAt) : '', !read && progressPage > 0 ? `Page ${progressPage + 1}` : '', downloadStatus === 'done' ? 'Downloaded' : downloadStatus === 'queued' || downloadStatus === 'downloading' ? 'In download queue' : downloadStatus === 'failed' ? 'Download failed' : ''].filter(Boolean).join(' · ');
+  const mark = `${read ? '<span class="chapter-state" title="Read">✓</span>' : '<span class="chapter-dot" title="Unread"></span>'}${bookmarked ? `<span class="chapter-flag" title="Bookmarked">${icon('bookmarkFill')}</span>` : ''}${downloadStatus === 'done' ? `<span class="chapter-flag chapter-saved" title="Downloaded">${icon('download', 'icon-sm')}</span>` : ''}`;
   const menu = menuOpen ? `<div class="chapter-menu" role="group" aria-label="Actions for ${escapeHtml(name)}">
       <button class="button button-small" type="button" data-action="chapter-mark" data-chapter-id="${id}" data-read="${read ? '0' : '1'}">${read ? 'Mark as unread' : 'Mark as read'}</button>
       <button class="button button-small" type="button" data-action="chapter-mark-previous" data-chapter-id="${id}">Mark previous as read</button>
       <button class="button button-small" type="button" data-action="chapter-bookmark" data-chapter-id="${id}" data-on="${bookmarked ? '0' : '1'}">${bookmarked ? 'Remove bookmark' : 'Bookmark'}</button>
+      ${canDownload && downloadStatus === 'done' ? `<button class="button button-small" type="button" data-action="download-chapter-delete" data-chapter-id="${id}">Delete download</button>` : ''}${canDownload && (downloadStatus === null || downloadStatus === 'failed') && Number(chapter.pages) > 0 ? `<button class="button button-small" type="button" data-action="download-chapter" data-chapter-id="${id}">Download</button>` : ''}
     </div>` : '';
   return `<article class="chapter-row ${read ? 'is-read' : ''}" data-chapter="${id}"><div class="chapter-row-main"><strong>${mark}<span class="chapter-name">${escapeHtml(name)}</span></strong><small>${escapeHtml(detail)}</small>${chapter.scanlationGroups?.length ? `<small>Group: ${escapeHtml(chapter.scanlationGroups.join(', '))}</small>` : ''}</div><div class="chapter-actions">${canRead && Number(chapter.pages) > 0 ? `<button class="button-primary chapter-read" type="button" data-action="read-chapter" data-chapter-id="${id}">${read ? 'Again' : 'Read'}</button>` : ''}<button class="button chapter-more" type="button" data-action="chapter-menu" data-chapter-id="${id}" aria-expanded="${menuOpen}" aria-label="More actions for ${escapeHtml(name)}">⋯</button>${sourceUrl ? `<a class="button chapter-open" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open on MangaDex">↗</a>` : ''}</div>${menu}</article>`;
 }

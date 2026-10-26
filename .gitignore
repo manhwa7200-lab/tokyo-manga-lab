@@ -8,9 +8,10 @@ dist/
 coverage/
 *.log
 
-# Capacitor / Android (generated in CI, never committed)
-www/
-android/
+# Capacitor / Android (generated in CI, never committed). Anchored with a leading slash so they only match the
+# top-level folders: a bare `android/` would also hide native/android/ (the optional Kotlin plugin sources).
+/www/
+/android/
 node_modules/
 upload/*.zip
 !upload/.gitkeep

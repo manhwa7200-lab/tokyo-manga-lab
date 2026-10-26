@@ -40,7 +40,7 @@ python3 tests/e2e/run.py   # browser tests (Python Playwright with Chromium)
 
 ## Current limits
 
-- Chapters are read from MangaDex through the in-app reader. Nothing is downloaded, so there is no offline reading yet.
+- Chapters are read from MangaDex through the in-app reader, or saved to your phone for offline reading (Downloads, `docs/DOWNLOADS.md`). Downloads are untested on a real phone and live MangaDex; they are gentle by design (one chapter at a time) and are never backed up or shared.
 - MangaDex is the only manga source. AniList is for tracking and metadata only. Other sources must pass `docs/SOURCE-REVIEW.md` first.
 - No Tokyo Manga Lab accounts or cloud sync. Backups are files you save yourself.
 - Adult titles are an off-by-default preference, available only in the Android app. It is not age verification (`docs/ADULT-SOURCES.md`).
