@@ -142,3 +142,9 @@
 - **Profile banner fixed:** the AniList banner is shown at its natural wide shape (about 3:1) instead of being zoomed and cropped, and the avatar and name now sit under it on the left so they no longer cover the banner artwork.
 - README rewritten for the public release (it still described an early preview).
 - Tests: 158 unit tests; 13 browser suites (new: themes).
+
+## 0.10.2 - Tag policy: safe-rated titles with loli/shota tags
+- **Worker (needs a redeploy):** the loli/shota tag block now works by rating instead of hiding every tagged title. A tagged title is shown only when MangaDex rates it **safe** and it carries no sexual-content tag; suggestive, erotica and pornographic stay blocked in every mode, including with the 18+ toggle on. `ALWAYS_BLOCKED_IDS` in the Worker hides any title that slips through. Tagged safe titles are found by searching their name and open normally. See `docs/TAG-POLICY.md`.
+- Settings > Language and content describes the rule.
+- This replaces the hand-kept exception list that briefly existed in the 0.10.1 zip (`docs/EXCEPTIONS.md` is gone).
+- Tests: 163 unit tests.

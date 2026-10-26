@@ -107,7 +107,7 @@ export const SETTINGS_CATEGORIES = Object.freeze([
       ] },
       { id: 'safety', title: 'Content safety', items: [
         { type: 'toggle', key: 'adultContentEnabled', title: 'Adult-content preference', badge: 'Android app', description: 'Off by default. A preference on this device, not age verification. Adds titles rated erotica or pornographic.' },
-        { type: 'info', title: 'Catalogue ratings', valueFrom: 'ratings', description: 'Titles tagged loli or shota are never shown.' }
+        { type: 'info', title: 'Catalogue ratings', valueFrom: 'ratings', description: 'Titles tagged loli or shota show only when rated safe. Suggestive and adult ones never show.' }
       ] }
     ]
   },

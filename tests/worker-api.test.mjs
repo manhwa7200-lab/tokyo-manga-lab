@@ -309,28 +309,42 @@ test('adult ratings need both no browser origin and adult=1', async t => {
   assert.equal((await allowed.json()).data.contentRating, 'pornographic');
 });
 
-test('sexualised-minor tags are blocked in every mode', async t => {
-  mockFetch(t, () => jsonResponse(mangaPayload('safe', [LOLI_TAG])));
-  assert.equal((await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}`))).status, 404);
-  assert.equal((await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}?adult=1`, { origin: '' }))).status, 404);
+test('loli/shota tagged titles are shown only when rated safe with no sexual-content tag', async t => {
+  const SEXUAL_TAG = { id: 'sexual-tag-id', attributes: { name: { en: 'Sexual Violence' } } };
+  const status = async (rating, tags, path = `/api/v1/manga/${MANGA_ID}`, origin) => {
+    mockFetch(t, () => jsonResponse(mangaPayload(rating, tags)));
+    return (await worker.fetch(apiRequest(path, origin === undefined ? {} : { origin }))).status;
+  };
+  assert.equal(await status('safe', [LOLI_TAG]), 200, 'safe + tag, browser');
+  assert.equal(await status('safe', [LOLI_TAG], `/api/v1/manga/${MANGA_ID}?adult=1`, ''), 200, 'safe + tag, app with 18+ on');
+  for (const rating of ['suggestive', 'erotica', 'pornographic']) {
+    assert.equal(await status(rating, [LOLI_TAG]), 404, `${rating} + tag, browser`);
+    assert.equal(await status(rating, [LOLI_TAG], `/api/v1/manga/${MANGA_ID}?adult=1`, ''), 404, `${rating} + tag, app with 18+ on`);
+  }
+  assert.equal(await status('safe', [LOLI_TAG, SEXUAL_TAG]), 404, 'a sexual-content tag next to the block tag means the rating is not trusted');
   // Name-based check still applies if the id ever changes upstream.
-  mockFetch(t, () => jsonResponse(mangaPayload('erotica', [{ id: 'other-id', attributes: { name: { en: 'Shota' } } }])));
-  assert.equal((await worker.fetch(apiRequest(`/api/v1/manga/${MANGA_ID}?adult=1`, { origin: '' }))).status, 404);
+  const SHOTA_BY_NAME = { id: 'other-id', attributes: { name: { en: 'Shota' } } };
+  assert.equal(await status('erotica', [SHOTA_BY_NAME], `/api/v1/manga/${MANGA_ID}?adult=1`, ''), 404);
+  assert.equal(await status('suggestive', [SHOTA_BY_NAME]), 404);
+  assert.equal(await status('safe', [SHOTA_BY_NAME]), 200);
 });
 
-test('search asks upstream for adult ratings only in the gated case, and always excludes blocked tags', async t => {
+test('search asks upstream for adult ratings only in the gated case, and always excludes blocked tags in the main request', async t => {
   const seen = [];
   mockFetch(t, url => { seen.push(url); return jsonResponse({ data: [sampleManga('pornographic')], total: 1 }); });
   const browser = await (await worker.fetch(apiRequest('/api/v1/search?query=x&adult=1'))).json();
   assert.equal(browser.data.length, 0);
-  assert.ok(!seen[0].searchParams.getAll('contentRating[]').includes('pornographic'));
+  const mainCalls = () => seen.filter(entry => !entry.searchParams.has('includedTags[]'));
+  assert.ok(!mainCalls()[0].searchParams.getAll('contentRating[]').includes('pornographic'));
   const app = await (await worker.fetch(apiRequest('/api/v1/search?query=x&adult=1', { origin: '' }))).json();
   assert.equal(app.data.length, 1);
-  assert.ok(seen[1].searchParams.getAll('contentRating[]').includes('pornographic'));
-  for (const url of seen) {
+  assert.ok(mainCalls()[1].searchParams.getAll('contentRating[]').includes('pornographic'));
+  for (const url of seen.filter(entry => !entry.searchParams.has('includedTags[]'))) {
     assert.ok(url.searchParams.getAll('excludedTags[]').includes(LOLI_TAG.id));
     assert.equal(url.searchParams.get('excludedTagsMode'), 'OR');
   }
+  // The separate request for safe-rated tagged titles asks for safe only, never for adult ratings.
+  for (const url of seen.filter(entry => entry.searchParams.has('includedTags[]'))) assert.deepEqual(url.searchParams.getAll('contentRating[]'), ['safe']);
 });
 
 test('legacy /manga route follows the same gate', async t => {
@@ -348,6 +362,10 @@ test('chapter pages follow the gate and the blocked-tag rule', async t => {
   assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages?adult=1`, { origin: '' }))).status, 200);
   mockFetch(t, url => url.pathname.startsWith('/at-home') ? jsonResponse(atHomeBody()) : jsonResponse(withParent('erotica', [LOLI_TAG])));
   assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages?adult=1`, { origin: '' }))).status, 404);
+  mockFetch(t, url => url.pathname.startsWith('/at-home') ? jsonResponse(atHomeBody()) : jsonResponse(withParent('suggestive', [LOLI_TAG])));
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`))).status, 404);
+  mockFetch(t, url => url.pathname.startsWith('/at-home') ? jsonResponse(atHomeBody()) : jsonResponse(withParent('safe', [LOLI_TAG])));
+  assert.equal((await worker.fetch(apiRequest(`/api/v1/chapters/${CHAPTER_ID}/pages`))).status, 200);
 });
 
 test('a client that sends too many requests is told to wait, other clients are unaffected, health stays open', async t => {
