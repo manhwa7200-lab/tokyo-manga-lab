@@ -10,10 +10,9 @@ export const FEATURES = Object.freeze([
   { id: 'advanced-filters', title: 'Advanced filters', description: 'Filter by status, year, demographic and tags.', icon: 'sliders', screens: ['discover'] },
   { id: 'saved-searches', title: 'Saved searches', description: 'Keep your favourite searches one tap away.', icon: 'bookmark', screens: ['discover'] },
   { id: 'smart-collections', title: 'Smart collections', description: 'Collections that fill themselves from rules you set.', icon: 'layers', screens: ['library'] },
+  { id: 'auto-download', title: 'Auto-download new chapters', description: 'Save new chapters of followed titles when you are on Wi-Fi.', icon: 'download', screens: ['downloads'] },
+  { id: 'delete-after-reading', title: 'Delete after reading', description: 'Free space by removing a chapter once you finish it.', icon: 'trash', screens: ['downloads'] },
   { id: 'bulk-edit', title: 'Bulk edit', description: 'Change status or collection for many titles at once.', icon: 'check', screens: ['library'] },
-  { id: 'offline-chapters', title: 'Offline chapters', description: 'Download chapters where the source allows it.', icon: 'download', screens: ['downloads'] },
-  { id: 'storage-manager', title: 'Storage manager', description: 'See what uses space and clear it safely.', icon: 'database', screens: ['downloads'] },
-  { id: 'wifi-only', title: 'Wi-Fi only downloads', description: 'Save mobile data by downloading on Wi-Fi.', icon: 'wifi', screens: ['downloads'] }
 ]);
 
 export function featuresFor(screen) {

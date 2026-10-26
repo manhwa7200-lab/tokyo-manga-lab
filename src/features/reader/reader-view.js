@@ -103,8 +103,9 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   // ---- page URL management -------------------------------------------------------------
   async function fetchPages() {
     const pages = await loadPages(chapterId, { signal: controller.signal });
+    if (view.pages?.release && view.pages !== pages) view.pages.release();
     view.pages = pages;
-    view.quality = pickQuality(pages, view.quality);
+    view.quality = pages.offline ? (pages.quality === 'data-saver' ? 'data-saver' : 'data') : pickQuality(pages, view.quality);
     view.urls = buildPageUrls(pages, view.quality);
     view.total = view.urls.length;
     view.lastRefresh = Date.now();
@@ -114,6 +115,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
   // `expiry` (URLs aged out) and `manual` (the person tapped retry) are always allowed; refreshes caused by
   // failing images are rate-limited and capped so a broken node cannot make the app hammer the API.
   function refreshPages({ expiry = false, manual = false } = {}) {
+    if (view.pages?.offline) return Promise.resolve(false); // saved pages have nothing to refresh
     if (view.refreshing) return view.refreshing;
     if (!expiry && !manual) {
       if (view.errorRefreshes >= MAX_ERROR_REFRESHES || Date.now() - view.lastErrorRefresh < MIN_ERROR_REFRESH_GAP_MS) return Promise.resolve(false);
@@ -175,6 +177,11 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
     if (img.dataset.native === '1') { // the app-network copy would not decode either
       img.dataset.state = 'failed';
       showFailure(img, index, { ok: false, available: true, status: 0, error: 'not-image' });
+      return;
+    }
+    if (view.pages?.offline) { // a saved page that will not show: nothing to ask the network for
+      img.dataset.state = 'failed';
+      showFailure(img, index, { ok: false, available: false, status: 0, error: 'offline-copy' });
       return;
     }
     const info = started.get(index);
@@ -459,6 +466,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
 
   function setQuality(quality) {
     if (!view.pages || quality === view.quality) return;
+    if (view.pages.offline) { toast('Downloaded chapters keep the quality they were saved in.'); return; }
     if (!(quality === 'data' ? view.pages.data : view.pages.dataSaver).length) { toast('This chapter is not available in that quality.'); return; }
     view.quality = quality;
     view.urls = buildPageUrls(view.pages, quality);
@@ -745,6 +753,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       teardownObservers();
       for (const objectUrl of blobUrls.values()) URL.revokeObjectURL(objectUrl);
       blobUrls.clear();
+      view.pages?.release?.();
       window.clearInterval(timer);
       window.clearInterval(view.clockTimer);
       window.clearTimeout(view.saveTimer);

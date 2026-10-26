@@ -126,3 +126,12 @@ PY
 else
   echo "WARN: MainActivity.java not found; volume-key paging will not be available in this build"
 fi
+
+# --- Optional: Kotlin download-notification plugin (keeps downloads running with the screen off) ---------------
+# Off unless the file native/android/ENABLED exists. See docs/ANDROID-NATIVE-DOWNLOADS.md.
+if [ -f native/android/ENABLED ]; then
+  echo "Native downloads plugin: enabled by native/android/ENABLED"
+  bash scripts/android-native-downloads.sh
+else
+  echo "Native downloads plugin: not enabled (optional)"
+fi

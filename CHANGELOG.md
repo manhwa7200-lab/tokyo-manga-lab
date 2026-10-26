@@ -148,3 +148,20 @@
 - Settings > Language and content describes the rule.
 - This replaces the hand-kept exception list that briefly existed in the 0.10.1 zip (`docs/EXCEPTIONS.md` is gone).
 - Tests: 163 unit tests.
+
+## 0.11.0 - Offline chapter downloads
+- **Download chapters and read them with no connection.** Open a title and tap **Download**: the new **Add to Download** screen has a round checkbox per chapter, *jump to*, a sort arrow, *Select All*, an "N Selected" count and a Download button that is disabled until you pick something. The icon at the top right opens the queue.
+- **Downloads tab** rebuilt: storage used against your limit, the live queue (progress, pause, resume, retry, cancel) and every saved chapter grouped by title, with delete per chapter, per title or all. Chapter rows on a title show "Downloaded" or "In download queue" and have Download / Delete download in their menu.
+- **Offline reader:** a saved chapter opens from the phone with no network and no reports; if it is damaged the reader falls back to online. Saved chapters keep the quality they were saved in.
+- **Settings > Downloads (new):** download quality (default Data saver), Download on Wi-Fi only (default on) and Storage limit (default 2 GB). These replace the planned entries. Two new planned entries: auto-download new chapters, delete after reading.
+- **Polite by design:** one chapter at a time, three images at a time, at least 2.5 s between page-list requests (MangaDex allows 40 a minute), anonymous image requests, every fetch from a MangaDex node reported, expired addresses refreshed, failed chapters kept resumable. The Worker still never relays image bytes, so **no Worker redeploy is needed for this release**.
+- **Storage:** images live in their own IndexedDB database (a storage adapter), records in `downloadJobs`. Downloads are never in backups and are never uploaded. The app asks the phone to keep its storage persistent.
+- **CSP:** `connect-src` now allows `https://*.mangadex.network` (with and without a port) and `uploads.mangadex.org` so the browser version can fetch pages to save them. The reader's page text no longer claims nothing is ever stored.
+- **Optional Kotlin plugin (off by default, never compiled):** `native/android/kotlin/` keeps downloads running with the screen off through a progress notification. Enable it by adding the empty file `native/android/ENABLED`; delete the file if the APK build fails. See `docs/ANDROID-NATIVE-DOWNLOADS.md`.
+- Docs: `docs/DOWNLOADS.md`, `docs/ANDROID-NATIVE-DOWNLOADS.md`. Reader security fix: blob: pages are never reported to MangaDex.
+- Tests: 190+ unit tests; new browser suite `downloads_e2e.py` (14 suites in all). Not verified on a real phone or live MangaDex.
+
+## 0.11.1 - Fix: Kotlin plugin files were not imported
+- The 0.11.0 zip imported without the `native/android/kotlin/` files because `.gitignore` had a bare `android/` line (meant for the generated top-level `android/` project), which also matched `native/android/`. GitHub's import therefore left them out and one unit test (`keep-alive.test.mjs`, which checks those files exist) failed in the APK build's test step, stopping the build.
+- `.gitignore` now anchors `/android/` and `/www/` to the top level. A new test fails if an unanchored `android/` or `www/` line comes back.
+- No app code changed. Apply this zip over 0.11.0, or instead of it.

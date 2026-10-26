@@ -27,10 +27,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
   chapterSortDir: 'desc',
   chapterDisplay: 'source-title',
   chapterFilterUnread: false,
-  chapterFilterBookmarked: false
+  chapterFilterBookmarked: false,
+  downloadQuality: 'data-saver',
+  downloadWifiOnly: true,
+  downloadStorageLimitMb: '2048'
 });
 
-const BOOLEAN_KEYS = new Set(['adultContentEnabled', 'reducedMotion', 'enableOnlineSearch', 'anilistPushEnabled', 'readerShowStatusBar', 'readerShowClock', 'readerVolumeKeys', 'readerChapterNotice', 'readerSkipExtras', 'trackerAutoUpdate', 'chapterFilterUnread', 'chapterFilterBookmarked']);
+const BOOLEAN_KEYS = new Set(['adultContentEnabled', 'reducedMotion', 'enableOnlineSearch', 'anilistPushEnabled', 'readerShowStatusBar', 'readerShowClock', 'readerVolumeKeys', 'readerChapterNotice', 'readerSkipExtras', 'trackerAutoUpdate', 'chapterFilterUnread', 'chapterFilterBookmarked', 'downloadWifiOnly']);
 
 // Allowed values for every select setting come from the schema, so the UI and validation cannot drift apart.
 function allowedValues(key) {

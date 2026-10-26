@@ -77,9 +77,19 @@ export const SETTINGS_CATEGORIES = Object.freeze([
         { type: 'toggle', key: 'chapterFilterBookmarked', title: 'Only bookmarked chapters', description: 'Show only chapters you bookmarked.' }
       ] },
       { id: 'later', title: 'Later', items: [
-        { type: 'planned', id: 'reading-goals', title: 'Reading goals', description: 'Weekly goals and streaks.' },
-        { type: 'planned', id: 'wifi-only', title: 'Download on Wi-Fi only', description: 'Save mobile data.' },
-        { type: 'planned', id: 'storage-limit', title: 'Storage limit', description: 'Cap how much space downloads can use.' }
+        { type: 'planned', id: 'reading-goals', title: 'Reading goals', description: 'Weekly goals and streaks.' }
+      ] }
+    ]
+  },
+  {
+    id: 'downloads', section: 'app', title: 'Downloads', icon: 'download', summary: 'Offline chapters and storage',
+    groups: [
+      { id: 'offline', title: 'Offline chapters', items: [
+        { type: 'select', key: 'downloadQuality', title: 'Download quality', description: 'Data saver files are about half the size.', options: [['data-saver', 'Data saver'], ['data', 'Original quality']] },
+        { type: 'toggle', key: 'downloadWifiOnly', title: 'Download on Wi-Fi only', description: 'Waits on mobile data. Needs the phone to report its connection type.' },
+        { type: 'select', key: 'downloadStorageLimitMb', title: 'Storage limit', description: 'New downloads wait once this much is used.', options: [['512', '512 MB'], ['1024', '1 GB'], ['2048', '2 GB'], ['5120', '5 GB'], ['0', 'No limit']] },
+        { type: 'info', title: 'Saved on this device', valueFrom: 'downloadUsage', description: 'Downloads stay on this phone. They are not part of a backup.' },
+        { type: 'action', action: 'open-downloads', title: 'Manage downloads', description: 'See the queue and delete chapters.', button: 'Open' }
       ] }
     ]
   },
@@ -193,7 +203,7 @@ export function findCategory(id) {
 }
 
 export const SETTING_CONDITIONS = Object.freeze(['anilistConnected', 'anilistDisconnected']);
-export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync', 'ratings']);
+export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync', 'ratings', 'downloadUsage']);
 export const CATEGORY_VALUES = Object.freeze(['theme', 'readerMode', 'language', 'anilistStatus']);
 
 export function allSettingKeys() {

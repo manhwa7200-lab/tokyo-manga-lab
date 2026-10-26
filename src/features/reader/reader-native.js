@@ -49,6 +49,7 @@ export async function fetchImageNative(url, { timeoutMs = 25000 } = {}) {
 
 export function describeFailure(result, host = '') {
   const where = host ? ` (${host})` : '';
+  if (result?.error === 'offline-copy') return 'This saved page could not be shown. Delete the download and save the chapter again.';
   if (!result || result.available === false) return `The image server${where} did not deliver this page.`;
   if (result.error === 'network') return `Could not connect to MangaDex's image server${where}. Your network may be blocking it, or you are offline.`;
   if (result.status === 403) return `MangaDex's image server${where} refused the request (403). The address may have expired.`;

@@ -1,7 +1,7 @@
 # Tokyo Manga Lab - build info
 
-Version: 0.10.2
-Milestone: Themes, AniList profile, first public release
+Version: 0.11.1
+Milestone: Offline chapter downloads
 
 See `CHANGELOG.md` for what changed in each version and `docs/` for the design notes.
 
@@ -11,5 +11,5 @@ See `CHANGELOG.md` for what changed in each version and `docs/` for the design n
 - `python3 tests/e2e/run.py` runs the browser tests (needs Python Playwright with Chromium).
 
 ## Not included
-- No offline chapter downloads.
+- Downloads have not been run on a real phone or against live MangaDex, and the optional Kotlin plugin has not been compiled (`docs/ANDROID-NATIVE-DOWNLOADS.md`).
 - No Worker deployment, GitHub commit or push is done by building this package.
