@@ -1,7 +1,7 @@
 # Tokyo Manga Lab - build info
 
-Version: 0.12.0
-Milestone: Discover filters, Latest, Recent, new Downloads screen
+Version: 1.0.0
+Milestone: First Stable Release
 
 See `CHANGELOG.md` for what changed in each version and `docs/` for the design notes.
 
