@@ -1,8 +1,9 @@
 import { getRecord, putRecord } from '../../data/database.js';
 import { SETTINGS_CATEGORIES } from './settings-schema.js';
+import { DEFAULT_THEME } from '../theme/themes.js';
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  theme: 'sakura',
+  theme: DEFAULT_THEME,
   adultContentEnabled: false,
   reducedMotion: false,
   defaultLibrarySort: 'recently-updated',

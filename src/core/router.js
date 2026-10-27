@@ -1,5 +1,5 @@
 // Routes look like  #library  or  #settings/appearance  (route + optional sub-page).
-const ALLOWED_ROUTES = new Set(['home', 'discover', 'library', 'downloads', 'profile', 'settings', 'read']);
+const ALLOWED_ROUTES = new Set(['home', 'discover', 'library', 'recent', 'downloads', 'profile', 'settings', 'read']);
 
 export function parseRoute(hash) {
   const [path] = String(hash || '#home').replace(/^#/, '').split('?');

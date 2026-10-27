@@ -3,9 +3,11 @@
 import { DOWNLOAD_QUALITIES, isSelectable, jumpTarget, pickerOrder, storageLimitBytes, toggleAll, toggleSelection } from './download-plan.js';
 import { footerCounts, renderDownloadsBody, renderPicker } from './download-ui.js';
 
-export function createDownloadController({ downloads, dialog, getSettings, getConnection, toast, getDetails, loadRestChapters, redrawDetails, goToDownloads, readDownloaded, groupKeyToIds }) {
+export function createDownloadController({ loadReadInfo = async () => new Map(), downloads, dialog, getSettings, getConnection, toast, getDetails, loadRestChapters, redrawDetails, goToDownloads, readDownloaded, groupKeyToIds }) {
   const pick = { open: false, history: false, dir: 'desc', selected: new Set(), jumpOpen: false };
   const openGroups = new Set();
+  let readInfo = new Map();
+  let manageOpen = false;
   let screenTimer = 0;
   let lastScreenRender = 0;
 
@@ -147,6 +149,7 @@ export function createDownloadController({ downloads, dialog, getSettings, getCo
       case 'download-delete-all':
         if (window.confirm('Delete every downloaded chapter from this phone? Your library and reading progress are kept.')) { await downloads.removeAll(); toast('All downloads deleted.'); refreshScreen(true); }
         return true;
+      case 'download-manage-toggle': manageOpen = !manageOpen; refreshScreen(true); return true;
       case 'download-pause': downloads.pause(); return true;
       case 'download-resume': downloads.resume(); return true;
       case 'download-retry': await downloads.retry(target.dataset.chapterId); return true;
@@ -163,7 +166,7 @@ export function createDownloadController({ downloads, dialog, getSettings, getCo
 
   // ---- Downloads screen -----------------------------------------------------------------------------------------
   function screenMarkup() {
-    return renderDownloadsBody({ snapshot: downloads.snapshot(), limitBytes: storageLimitBytes(getSettings()?.downloadStorageLimitMb), openGroups, online: getConnection()?.online !== false });
+    return renderDownloadsBody({ snapshot: downloads.snapshot(), limitBytes: storageLimitBytes(getSettings()?.downloadStorageLimitMb), openGroups, online: getConnection()?.online !== false, readInfo, manageOpen });
   }
 
   function refreshScreen(now = false) {
@@ -177,6 +180,12 @@ export function createDownloadController({ downloads, dialog, getSettings, getCo
       lastScreenRender = Date.now();
       host.innerHTML = screenMarkup();
     }, wait);
+  }
+
+  // "Read to Ch. N" under each title comes from Recent.
+  async function refreshReadInfo() {
+    try { readInfo = await loadReadInfo(); } catch { readInfo = new Map(); }
+    refreshScreen(true);
   }
 
   document.addEventListener('toggle', event => {
@@ -195,5 +204,5 @@ export function createDownloadController({ downloads, dialog, getSettings, getCo
     if (count) button.insertAdjacentHTML('beforeend', `<span class="dl-badge">${count > 99 ? '99+' : count}</span>`);
   }
 
-  return { openPicker, closePicker, handleAction, handleSubmit, handlePopState, isOpen: () => pick.open, screenMarkup, refreshScreen, usageText: () => { const { usage } = downloads.snapshot(); return usage.chapters ? `${usage.chapters} chapter${usage.chapters === 1 ? '' : 's'}` : 'Nothing saved'; } };
+  return { refreshReadInfo, openPicker, closePicker, handleAction, handleSubmit, handlePopState, isOpen: () => pick.open, screenMarkup, refreshScreen, usageText: () => { const { usage } = downloads.snapshot(); return usage.chapters ? `${usage.chapters} chapter${usage.chapters === 1 ? '' : 's'}` : 'Nothing saved'; } };
 }

@@ -4,9 +4,9 @@ Pick a theme in **Settings > Appearance**, or tap the moon button at the top to 
 
 | Theme | Mood | Mode |
 | --- | --- | --- |
-| Sakura Night (default) | pink on dark | dark |
+| Sakura Night | pink on dark | dark |
 | Midnight Blue | cool blue | dark |
-| Sakura Flowers | soft cherry petals | light |
+| Sakura Flowers (default) | soft cherry petals | light |
 | One Piece | deep-sea navy, straw hat gold, wave lines | dark |
 | Naruto | ninja orange, headband blue, swirl rings | dark |
 | Gintama (special) | silver and strawberry milk, Edo wave pattern, gradient buttons | dark |

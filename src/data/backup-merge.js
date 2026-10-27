@@ -2,7 +2,7 @@
 
 export const BACKUP_STORES = Object.freeze([
   'contentItems', 'sourceEntries', 'libraryEntries', 'collections', 'collectionItems', 'readingProgress', 'chapterProgress',
-  'bookmarks', 'localFiles', 'appSettings', 'sourceSettings', 'readingSessions', 'activityEvents', 'syncLinks'
+  'bookmarks', 'localFiles', 'appSettings', 'sourceSettings', 'readingSessions', 'readingHistory', 'activityEvents', 'syncLinks'
 ]);
 
 // `accountLinks` (the AniList sign-in token) is deliberately not part of a backup.

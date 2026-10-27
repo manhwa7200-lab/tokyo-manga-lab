@@ -35,6 +35,8 @@ function normalizeManga(raw) {
     language: raw.language || raw.originalLanguage || null,
     sourceUrl: raw.sourceUrl || raw.mangaDexUrl || `https://mangadex.org/title/${encodeURIComponent(externalId)}`,
     contentRating: raw.contentRating || 'unknown',
+    lastChapter: raw.lastChapter ? String(raw.lastChapter).slice(0, 12) : null,
+    latestChapter: raw.latestChapter?.number ? { number: String(raw.latestChapter.number).slice(0, 12), publishedAt: raw.latestChapter.publishedAt || null } : null,
     anilistId: /^\d{1,9}$/.test(String(raw.anilistId ?? '')) ? String(raw.anilistId) : null
   };
 }
@@ -44,14 +46,28 @@ export const mangaDexAdapter = Object.freeze({
   label: 'MangaDex',
   contentTypes: ['manga'],
   capabilities: { search: true, titleDetails: true, chapters: true, chapterContent: true, offlineDownloads: true },
-  async search(query = '', page = 1, { signal } = {}) {
-    const payload = await apiClient.mangaSearch({ query, page, signal });
+  async search(query = '', page = 1, { signal, genres = [], status = '', sort = '' } = {}) {
+    const payload = await apiClient.mangaSearch({ query, page, genres, status, sort, signal });
     if (!payload || !Array.isArray(payload.data)) throw new Error('MangaDex returned data in an unexpected format.');
     const items = payload.data.map(normalizeManga).filter(item => item.externalId);
     const total = Math.max(0, Number(payload.total) || 0);
     const limit = Math.max(1, Number(payload.limit) || 24);
     const pageNumber = Math.max(1, Number(payload.page) || Number(page) || 1);
     return { items, pagination: { page: pageNumber, limit, total, hasNext: pageNumber * limit < total }, source: 'mangadex' };
+  },
+  // The newest chapters, one entry per title (each carries `latestChapter`). 100 chapters are read per page.
+  async latest(page = 1, { signal } = {}) {
+    const payload = await apiClient.mangaLatest({ page, signal });
+    if (!Array.isArray(payload?.data) || !payload?.pagination) throw new Error('MangaDex returned the latest chapters in an unexpected format.');
+    const pageNumber = Math.max(1, Number(payload.pagination.page) || Number(page) || 1);
+    return { items: payload.data.map(normalizeManga).filter(item => item.externalId), pagination: { page: pageNumber, limit: Math.max(1, Number(payload.pagination.limit) || 100), total: Math.max(0, Number(payload.pagination.total) || 0), hasNext: Boolean(payload.pagination.hasNext) }, source: 'mangadex' };
+  },
+  // The genre list used by the Discover filter: [{id, name, group}].
+  async tags({ signal } = {}) {
+    const payload = await apiClient.mangaTags({ signal });
+    if (!Array.isArray(payload?.data)) throw new Error('MangaDex returned the genre list in an unexpected format.');
+    return payload.data.filter(tag => tag && typeof tag.id === 'string' && typeof tag.name === 'string' && tag.name)
+      .map(tag => ({ id: tag.id, name: tag.name.slice(0, 40), group: String(tag.group || 'other') }));
   },
   async details(externalId, { signal } = {}) {
     const payload = await apiClient.mangaDetails(externalId, { signal });

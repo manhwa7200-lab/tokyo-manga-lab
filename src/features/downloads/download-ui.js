@@ -58,27 +58,63 @@ function queueRow(job) {
   const progress = jobProgress(job);
   const failed = job.status === 'failed';
   const detail = failed ? (job.lastError || 'Download failed.') : job.status === 'downloading' ? `${job.donePages || 0} of ${job.pageCount || '…'} pages` : 'Waiting in the queue';
-  return `<div class="dl-job" data-state="${job.status}"><div class="dl-job-copy"><strong>${escapeHtml(job.mangaTitle || 'Untitled')}</strong><span>${escapeHtml(jobLabel(job))}</span><small ${failed ? 'class="is-error"' : ''}>${escapeHtml(detail)}</small>
+  return `<div class="dl-job" data-state="${job.status}"><div class="dl-job-copy"><span>${escapeHtml(jobLabel(job))}</span><small ${failed ? 'class="is-error"' : ''}>${escapeHtml(detail)}</small>
       <div class="dl-bar" role="progressbar" aria-label="Download progress for ${escapeHtml(jobLabel(job))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></div></div>
     <div class="dl-job-actions">${failed ? `<button class="button button-small" type="button" data-action="download-retry" data-chapter-id="${id}">Retry</button>` : ''}<button class="button button-small" type="button" data-action="download-cancel" data-chapter-id="${id}" aria-label="Remove ${escapeHtml(jobLabel(job))} from the queue">${failed ? 'Remove' : 'Cancel'}</button></div></div>`;
 }
 
-export function renderDownloadsBody({ snapshot, limitBytes, openGroups = new Set(), online = true }) {
+// Every title that has anything saved or waiting, one row each (queued and finished chapters together).
+export function titleRows(jobs) {
+  const groups = new Map();
+  for (const job of jobs || []) {
+    const key = job.contentItemId || `title:${job.mangaTitle}`;
+    if (!groups.has(key)) groups.set(key, { key, contentItemId: job.contentItemId || null, title: job.mangaTitle || 'Untitled', coverUrl: job.coverUrl || '', jobs: [], bytes: 0 });
+    const group = groups.get(key);
+    group.jobs.push(job);
+    group.bytes += Number(job.bytes) || 0;
+  }
+  return [...groups.values()].map(group => {
+    const done = group.jobs.filter(job => job.status === 'done');
+    const active = group.jobs.filter(job => job.status === 'queued' || job.status === 'downloading');
+    const failed = group.jobs.filter(job => job.status === 'failed');
+    return { ...group, done, active, failed, saved: groupDownloads(done)[0]?.chapters || [] };
+  }).sort((a, b) => (b.active.length > 0) - (a.active.length > 0) || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+}
+
+// "Paused", "Downloading", "Waiting for Wi-Fi" ... for a title that has chapters in the queue.
+export function activeStatus(row, snapshot) {
+  if (row.failed.length && !row.active.length) return 'Failed';
+  if (snapshot.paused) return 'Paused';
+  if (snapshot.waiting === 'wifi') return 'Waiting for Wi-Fi';
+  if (snapshot.waiting === 'offline') return 'Waiting for a connection';
+  if (snapshot.waiting === 'storage') return 'Storage limit reached';
+  return row.active.some(job => job.status === 'downloading') ? 'Downloading' : 'Queued';
+}
+
+function titleRowMarkup(row, snapshot, readInfo, open) {
+  const total = row.done.length + row.active.length + row.failed.length;
+  const busy = row.active.length > 0 || row.failed.length > 0;
+  const percent = total ? Math.round(row.done.length / total * 100) : 0;
+  const lines = busy
+    ? `<span class="dl-line"><span>${escapeHtml(activeStatus(row, snapshot))}</span><span class="dl-count">${row.done.length}/${total}</span></span><span class="dl-bar" role="progressbar" aria-label="Chapters finished for ${escapeHtml(row.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span style="width:${percent}%"></span></span>`
+    : `<span class="dl-line"><span>${escapeHtml(readInfo.get(row.contentItemId) || 'Not started')}</span></span><span class="dl-line"><span>Used ${escapeHtml(formatBytes(row.bytes))}</span></span>`;
+  const chapters = row.saved.map(job => `<div class="dl-chapter"><button class="dl-chapter-open" type="button" data-action="download-read" data-chapter-id="${escapeHtml(job.id)}"><strong>${escapeHtml(jobLabel(job))}</strong><small>${job.pageCount} pages · ${formatBytes(job.bytes)} · ${job.quality === 'data' ? 'Original' : 'Data saver'}</small></button><button class="icon-button" type="button" data-action="download-delete" data-chapter-id="${escapeHtml(job.id)}" aria-label="Delete ${escapeHtml(jobLabel(job))}">${icon('trash')}</button></div>`).join('');
+  const queue = [...row.active, ...row.failed].map(queueRow).join('');
+  return `<details class="dl-group" data-group="${escapeHtml(row.key)}" ${open ? 'open' : ''}><summary>${thumb(row.coverUrl)}<span class="dl-group-copy"><strong>${escapeHtml(row.title)}</strong>${lines}</span>${icon('chevronRight', 'icon-sm')}</summary>
+    ${queue ? `<div class="dl-jobs-inline">${queue}</div>` : ''}${chapters ? `<div class="dl-chapters">${chapters}</div>` : ''}
+    ${row.done.length ? `<div class="dl-group-foot"><button class="button button-small button-danger" type="button" data-action="download-delete-title" data-key="${escapeHtml(row.key)}">Delete saved chapters of this title</button></div>` : ''}</details>`;
+}
+
+export function renderDownloadsBody({ snapshot, limitBytes, openGroups = new Set(), online = true, readInfo = new Map(), manageOpen = false }) {
   const { jobs, usage, paused, waiting } = snapshot;
-  const active = jobs.filter(job => job.status !== 'done');
-  const groups = groupDownloads(jobs);
+  const rows = titleRows(jobs);
   const meter = limitBytes ? `<div class="dl-bar dl-usage-bar" role="img" aria-label="${Math.round(Math.min(100, usage.bytes / limitBytes * 100))} percent of the storage limit used"><span style="width:${Math.min(100, usage.bytes / limitBytes * 100)}%"></span></div>` : '';
   const summary = `<div class="dl-summary"><div><strong>${formatBytes(usage.bytes)}</strong><small>${usage.chapters} chapter${usage.chapters === 1 ? '' : 's'} saved${limitBytes ? ` · limit ${formatBytes(limitBytes)}` : ' · no limit'}</small></div>${meter}</div>`;
   const note = waitingText(waiting);
-  const hasRunning = active.some(job => job.status === 'queued' || job.status === 'downloading');
-  const queueControls = `<div class="dl-queue-tools">${hasRunning && !paused ? '<button class="button button-small" type="button" data-action="download-pause">Pause</button>' : ''}${paused ? '<button class="button-primary button-small" type="button" data-action="download-resume">Resume</button>' : ''}${active.some(job => job.status === 'failed') ? '<button class="button button-small" type="button" data-action="download-retry-all">Retry failed</button>' : ''}</div>`;
-  const queue = active.length
-    ? `<h2 class="group-title">Queue</h2>${note ? `<p class="notice ${waiting === 'paused' ? '' : 'warning'}" role="status">${escapeHtml(note)}</p>` : ''}${queueControls}<div class="dl-jobs">${active.map(queueRow).join('')}</div>`
-    : '';
-  const saved = groups.length
-    ? `<h2 class="group-title">Saved on this device</h2><div class="dl-groups">${groups.map(group => `<details class="dl-group" data-group="${escapeHtml(group.key)}" ${openGroups.has(group.key) ? 'open' : ''}><summary>${thumb(group.coverUrl)}<span class="dl-group-copy"><strong>${escapeHtml(group.title)}</strong><small>${group.chapters.length} chapter${group.chapters.length === 1 ? '' : 's'} · ${formatBytes(group.bytes)}</small></span>${icon('chevronRight', 'icon-sm')}</summary>
-        <div class="dl-chapters">${group.chapters.map(job => `<div class="dl-chapter"><button class="dl-chapter-open" type="button" data-action="download-read" data-chapter-id="${escapeHtml(job.id)}"><strong>${escapeHtml(jobLabel(job))}</strong><small>${job.pageCount} pages · ${formatBytes(job.bytes)} · ${job.quality === 'data' ? 'Original' : 'Data saver'}</small></button><button class="icon-button" type="button" data-action="download-delete" data-chapter-id="${escapeHtml(job.id)}" aria-label="Delete ${escapeHtml(jobLabel(job))}">${icon('trash')}</button></div>`).join('')}</div>
-        <div class="dl-group-foot"><button class="button button-small button-danger" type="button" data-action="download-delete-title" data-key="${escapeHtml(group.key)}">Delete all of this title</button></div></details>`).join('')}</div><div class="dl-delete-all"><button class="button button-danger" type="button" data-action="download-delete-all">Delete all downloads</button></div>`
-    : (active.length ? '' : `<div class="empty-state"><strong>Nothing downloaded yet</strong><span>Open a title, tap the download button above its chapters, and pick what to keep for offline reading.</span></div>`);
-  return `${summary}${online ? '' : '<p class="notice" role="status">You are offline. Saved chapters still open.</p>'}${queue}${saved}`;
+  const hasRunning = jobs.some(job => job.status === 'queued' || job.status === 'downloading');
+  const manage = manageOpen ? `<div class="dl-manage" role="group" aria-label="Manage downloads">${hasRunning && !paused ? '<button class="button button-small" type="button" data-action="download-pause">Pause all</button>' : ''}${paused ? '<button class="button-primary button-small" type="button" data-action="download-resume">Resume</button>' : ''}${jobs.some(job => job.status === 'failed') ? '<button class="button button-small" type="button" data-action="download-retry-all">Retry failed</button>' : ''}${jobs.length ? '<button class="button button-small button-danger" type="button" data-action="download-delete-all">Delete all downloads</button>' : '<span class="muted">Nothing to manage yet.</span>'}</div>` : '';
+  const list = rows.length
+    ? `<div class="dl-groups">${rows.map(row => titleRowMarkup(row, snapshot, readInfo, openGroups.has(row.key))).join('')}</div>`
+    : `<div class="empty-state"><strong>Nothing downloaded yet</strong><span>Open a title, tap the download button above its chapters, and pick what to keep for offline reading.</span></div>`;
+  return `${summary}${online ? '' : '<p class="notice" role="status">You are offline. Saved chapters still open.</p>'}${note && hasRunning ? `<p class="notice ${waiting === 'paused' ? '' : 'warning'}" role="status">${escapeHtml(note)}</p>` : ''}${manage}${list}`;
 }

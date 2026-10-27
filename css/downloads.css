@@ -60,13 +60,13 @@
 .dl-job-copy small.is-error { color: var(--danger); white-space: normal; }
 .dl-job-actions { display: flex; flex-direction: column; gap: 6px; }
 .dl-group { border-radius: var(--radius-m); background: var(--raised); overflow: hidden; }
-.dl-group summary { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; list-style: none; }
+.dl-group summary { display: flex; align-items: center; gap: 14px; padding: 12px 14px; cursor: pointer; list-style: none; }
 .dl-group summary::-webkit-details-marker { display: none; }
 .dl-group[open] summary > svg { transform: rotate(90deg); }
 .dl-group-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .dl-group-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-group-copy small { color: var(--muted); font-size: .78rem; }
-.dl-thumb { flex: 0 0 44px; width: 44px; height: 62px; border-radius: 8px; object-fit: cover; background: var(--raised-2); }
+.dl-thumb { flex: 0 0 72px; width: 72px; height: 96px; border-radius: 8px; object-fit: cover; background: var(--raised-2); }
 .dl-thumb-empty { display: grid; place-items: center; color: var(--muted); }
 .dl-chapters { border-top: 1px solid var(--line-soft); }
 .dl-chapter { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
@@ -77,3 +77,18 @@
 .chapter-download-btn { gap: 6px; }
 .chapter-saved { color: var(--good); }
 @media (prefers-reduced-motion: reduce) { .dl-bar span { transition: none; } }
+
+/* Header and per-title rows (modelled on the reference screen) */
+.dl-head { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; margin: 4px 0 12px; }
+.dl-head h1 { margin: 0; text-align: center; font-size: 1.25rem; }
+.dl-head .icon-button { background: transparent; color: var(--text); }
+.dl-manage { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 12px; border-radius: var(--radius-m); background: var(--surface); }
+.dl-groups { margin-top: 14px; gap: 0; }
+.dl-group { border-radius: 0; background: transparent; border-bottom: 1px solid var(--line-soft); }
+.dl-group-copy { gap: 6px; }
+.dl-group-copy strong { font-size: .98rem; }
+.dl-line { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .8rem; }
+.dl-count { font-variant-numeric: tabular-nums; }
+.dl-group-copy .dl-bar { display: block; }
+.dl-jobs-inline { display: grid; gap: 8px; padding: 0 14px 12px; }
+.dl-group[open] > summary > svg:last-child { transform: rotate(90deg); }

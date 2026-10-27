@@ -49,7 +49,7 @@ export function friendlyError(error) {
  * which keeps it testable and avoids circular imports.
  * Returns { destroy }.
  */
-export function mountReader(host, { chapterId, context, settings, loadPages, onClose, onOpenChapter, onSetting, onOpenSettings }) {
+export function mountReader(host, { chapterId, context, settings, loadPages, onClose, onHistory, onOpenChapter, onSetting, onOpenSettings }) {
   const chapters = Array.isArray(context?.chapters) ? context.chapters : [];
   const position = chapters.findIndex(chapter => chapter.id === chapterId);
   const current = position >= 0 ? chapters[position] : null;
@@ -729,6 +729,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       // Resume unless the chapter was already finished; a finished chapter reopens at page one.
       view.page = saved && saved.readingState !== 'completed' ? clampPage(saved.page, view.total) : 0;
       if (view.destroyed) return;
+      try { onHistory?.({ chapterId, page: view.page, total: view.total }); } catch { /* Recent is a convenience */ }
       if (!tipsSeen()) view.tips = true;
       render();
       const parts = [];
@@ -767,6 +768,7 @@ export function mountReader(host, { chapterId, context, settings, loadPages, onC
       // Give the phone back the way we found it.
       if (view.statusHidden) setStatusBarVisible(true);
       if (view.orientationLocked) setOrientation('auto');
+      if (view.total > 0) { try { onHistory?.({ chapterId, page: view.page, total: view.total, keepTime: true }); } catch { /* Recent is a convenience */ } }
       if (view.total > 0) saveChapterProgress({ chapterId, contentItemId, page: view.page, total: view.total, ended: view.ended || view.endSeen }).catch(() => {});
       recordReadingSession({ chapterId, contentItemId, startedAt: view.startedAt, activeSeconds: view.activeSeconds }).catch(() => {});
     }

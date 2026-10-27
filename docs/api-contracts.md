@@ -5,8 +5,8 @@
 ### `GET /health`
 Returns `{ ok, service, contentRatings, apiVersion }`.
 
-### `GET /manga?q={query}&page={page}`
-Legacy MangaDex search response retained for existing frontend compatibility. `page` is clamped to 1–20 and each page contains up to 24 results. Only `safe` and `suggestive` ratings are requested.
+### `GET /manga?q={query}&page={page}[&genre=…&status=…&sort=…]`
+Legacy MangaDex search response retained for existing frontend compatibility (the app still uses it for search). `page` is clamped to 1–20 and each page contains up to 24 results. Only `safe` and `suggestive` ratings are requested. Accepts the same `genre`, `status` and `sort` filters as `/api/v1/search` below and returns `lastChapter`.
 
 ## Versioned metadata API
 
@@ -17,6 +17,14 @@ Returns source IDs and capability flags. For the current connector, `search`, `t
 
 ### `GET /api/v1/search?query={query}&type=manga&page={page}`
 Returns `{ data: ContentItem[], pagination, meta }`. The normalized ContentItem includes `sourceId`, `externalId`, `contentType`, `title`, `alternateTitles`, `description`, `coverUrl`, `authors`, `artists`, `genres`, `tags`, `publicationStatus`, `releaseYear`, `language`, `sourceUrl`, and `contentRating`.
+
+Optional filters (0.12.0): `genre` (comma-separated tag ids, at most 6, all must match), `status` (`ongoing|completed|hiatus|cancelled`) and `sort` (`popular` = most followed, `new` = newest title, `updated` = newest chapter). Unknown values are ignored; the loli and shota tag ids are dropped from `genre`. With no query and no sort the order is newest chapter first. While a filter is on, the extra safe-rated tagged-title lookup is skipped.
+
+### `GET /api/v1/tags`
+Returns `{ data: [{ id, name, group }], meta }` for the Genre sheet, from MangaDex's tag list (kept in the Worker for six hours). loli and shota are never listed; tags about sexual content are listed only in the adult-gated case (app, no Origin header, `adult=1`).
+
+### `GET /api/v1/latest?page={page}`
+Newest English chapters, one entry per title: `{ data: ContentItem[] (each with latestChapter: { number, publishedAt }), pagination, meta }`. One page reads the newest 100 chapters (so a page can hold up to 100 titles); pages are clamped to 1–20. Titles go through the same content policy as search.
 
 ### `GET /api/v1/manga/{mangaDexUuid}`
 Returns `{ data: ContentItem, meta }`. Only MangaDex UUIDs and supported content ratings are accepted.
