@@ -6,7 +6,7 @@ Version: see `BUILD-INFO.md` and `CHANGELOG.md`.
 
 ## What it does
 
-- **Discover and read.** Search MangaDex, open a title, read chapters in vertical-scroll, right-to-left or left-to-right modes with progress remembered per chapter.
+- **Discover and read.** Search MangaDex, filter by genre, status and sort order, browse the Latest tab,  open a title, read chapters in vertical-scroll, right-to-left or left-to-right modes with progress remembered per chapter.
 - **Library.** Save titles, set a reading status, favourites and collections. JSON backup and restore (library, collections and settings; never your AniList sign-in).
 - **Chapter list.** Sort, filter (unread, bookmarked, scanlator), display options, mark read, bookmark.
 - **AniList (optional).** Log in, import your manga list, track status, chapters, score and dates, and send progress when you finish a chapter (queued while offline). Your AniList banner, avatar and totals show on Profile. The app works fully without it. See `docs/ANILIST.md`.
@@ -41,6 +41,7 @@ python3 tests/e2e/run.py   # browser tests (Python Playwright with Chromium)
 ## Current limits
 
 - Chapters are read from MangaDex through the in-app reader, or saved to your phone for offline reading (Downloads, `docs/DOWNLOADS.md`). Downloads are untested on a real phone and live MangaDex; they are gentle by design (one chapter at a time) and are never backed up or shared.
+- Genre, Status, Sort by and Latest need the updated Worker deployed. They were tested against mocked responses, not live MangaDex.
 - MangaDex is the only manga source. AniList is for tracking and metadata only. Other sources must pass `docs/SOURCE-REVIEW.md` first.
 - No Tokyo Manga Lab accounts or cloud sync. Backups are files you save yourself.
 - Adult titles are an off-by-default preference, available only in the Android app. It is not age verification (`docs/ADULT-SOURCES.md`).

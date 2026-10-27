@@ -12,7 +12,7 @@ This document specifies the approved conceptual model. It is not a command to cr
 ## Local stores
 
 ### `contentItems`
-`id`, `title`, `alternateTitles[]`, `contentType` (`manga|novel|web_novel`), `description`, `coverAssetKey`, `genres[]`, `authors[]`, `artists[]`, `publicationStatus`, `releaseYear`, `language`, `createdAt`, `updatedAt`.
+`id`, `title`, `alternateTitles[]`, `contentType` (`manga|novel|web_novel`), `description`, `coverAssetKey`, `genres[]`, `authors[]`, `artists[]`, `publicationStatus`, `lastChapter` (final chapter number MangaDex lists, when known), `latestChapter` (`{number, publishedAt}`, only on items loaded from the Latest feed), `releaseYear`, `language`, `createdAt`, `updatedAt`.
 
 ### `sourceEntries`
 `id`, `contentItemId`, `sourceId`, `externalId`, `sourceUrl`, `sourceTitle`, `language`, `lastCheckedAt`, `availabilityStatus`. When available, `(sourceId, externalId)` is unique. Never merge uncertain provider matches silently.
@@ -34,6 +34,9 @@ This document specifies the approved conceptual model. It is not a command to cr
 
 ### `savedViews`
 `id`, `name`, `filterRules`, `sortRules`, `createdAt`.
+
+### `readingHistory`
+Added in database version 3 (0.12.0), shown on the Recent tab. One row per title: `id` (the content item id), `contentItemId`, `title`, `coverUrl`, `chapterId`, `chapterNumber`, `page`, `pageCount`, `readAt`. Reading another chapter of the same title updates its row. Included in backups. Clearing Recent deletes only these rows, never reading progress. Trimmed to the newest entries.
 
 ### `readingProgress`
 `contentItemId`, `chapterRecordId`, `readerType` (`manga|epub|text|pdf`), `position` (format-specific object), `progressPercent`, `lastReadAt`, `updatedAt`, `deviceId`. Unique per local profile/content item. The position must be type-validated for the selected reader.

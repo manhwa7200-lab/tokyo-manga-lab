@@ -103,7 +103,9 @@ async function getJsonOnce(path, params = {}, { signal } = {}) {
 export const apiClient = {
   health: ({ signal } = {}) => getJson('health', {}, { signal, retries: 1 }),
   // Keep search on the proven legacy route until the versioned endpoints are deployed.
-  mangaSearch: ({ query = '', page = 1, signal } = {}) => getJson('manga', { q: String(query).trim().slice(0, 100), page: Math.max(1, Math.min(20, Number(page) || 1)) }, { signal }),
+  mangaSearch: ({ query = '', page = 1, genres = [], status = '', sort = '', signal } = {}) => getJson('manga', { q: String(query).trim().slice(0, 100), page: Math.max(1, Math.min(20, Number(page) || 1)), genre: (Array.isArray(genres) ? genres : []).slice(0, 6).join(','), status, sort }, { signal }),
+  mangaLatest: ({ page = 1, signal } = {}) => getJson('api/v1/latest', { page: Math.max(1, Math.min(20, Number(page) || 1)) }, { signal }),
+  mangaTags: ({ signal } = {}) => getJson('api/v1/tags', {}, { signal }),
   mangaDetails: (externalId, { signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}`, {}, { signal }),
   mangaChapters: (externalId, { page = 1, language = 'en', limit, signal } = {}) => getJson(`api/v1/manga/${encodeURIComponent(String(externalId || ''))}/chapters`, { page: Math.max(1, Math.min(1000, Number(page) || 1)), language, limit: limit ? Math.max(1, Math.min(100, Number(limit) || 24)) : undefined }, { signal }),
   chapterPages: (chapterId, { signal } = {}) => getJson(`api/v1/chapters/${encodeURIComponent(String(chapterId || ''))}/pages`, {}, { signal }),

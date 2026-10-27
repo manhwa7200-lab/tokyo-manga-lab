@@ -165,3 +165,12 @@
 - The 0.11.0 zip imported without the `native/android/kotlin/` files because `.gitignore` had a bare `android/` line (meant for the generated top-level `android/` project), which also matched `native/android/`. GitHub's import therefore left them out and one unit test (`keep-alive.test.mjs`, which checks those files exist) failed in the APK build's test step, stopping the build.
 - `.gitignore` now anchors `/android/` and `/www/` to the top level. A new test fails if an unanchored `android/` or `www/` line comes back.
 - No app code changed. Apply this zip over 0.11.0, or instead of it.
+
+## 0.12.0 - Discover filters and Latest, Recent, new Downloads screen
+- **Discover:** ALL | LATEST tabs. On ALL, **Genre**, **Status** (Ongoing, Completed, Hiatus, Cancelled) and **Sort by** (Popular, New, Updated) open bottom sheets with chips, **Reset** and **Done**; Escape or tapping outside discards. Genres combine (all must match, up to 6). Cards say **Completed** or **Up to Ch. N**; LATEST cards also carry the date (Today, Yesterday, Oct 24). The old row of genre chips that only filtered the loaded page is gone. If the genre list cannot load you get a message and Retry.
+- **Worker (needs a redeploy):** new `GET /api/v1/tags` and `GET /api/v1/latest`; `genre`, `status`, `sort` on `/manga` and `/api/v1/search`; `lastChapter` in results. Loli/shota are never listed or filterable, sexual-content tags only in the adult-gated case. Default browse order now uses MangaDex's documented `latestUploadedChapter` key. Single-file copy: `tokyo-manga-lab-api2-worker.js`.
+- **Recent (new tab):** the titles you read, newest first, grouped by day, with "Read to Ch. N". Tap to open, remove one row, or clear all (progress is untouched). New `readingHistory` store (database version 3), included in backups.
+- **Downloads screen** redesigned: one row per title with cover, "Status n/N" and a progress bar, "Read to Ch. X", storage used; tap to expand chapters; a manage button for delete-all.
+- **Default theme is now Sakura Flowers** (first install and after reset).
+- **AniList:** the first sign-in now imports your list automatically.
+- Tests: 208 unit tests; new browser suites `recent_e2e.py` and `discover_e2e.py`.

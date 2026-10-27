@@ -31,6 +31,7 @@ test('theme ids are unique, the default exists and every theme has a swatch and 
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(ids.includes(DEFAULT_THEME));
   assert.equal(DEFAULT_SETTINGS.theme, DEFAULT_THEME);
+  assert.ok(['sakura-flowers', 'rent-a-girlfriend'].includes(DEFAULT_THEME), 'a fresh install starts on a light theme');
   for (const theme of THEMES) {
     assert.ok(theme.name && theme.note, `${theme.id} needs a name and note`);
     assert.equal(theme.swatch.length, 3);

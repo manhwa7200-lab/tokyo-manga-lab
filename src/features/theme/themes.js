@@ -5,7 +5,8 @@
 //
 // To add a theme: add an entry here, add its block to css/theme.css (copy a similar one), run `npm test`.
 // The contrast test checks that text, muted text and buttons stay readable on every theme.
-export const DEFAULT_THEME = 'sakura';
+// A fresh install, or a reset, starts on the light Sakura Flowers theme. Sakura Night is still one tap away.
+export const DEFAULT_THEME = 'sakura-flowers';
 
 export const THEMES = Object.freeze([
   { id: 'sakura', name: 'Sakura Night', note: 'Pink on dark. The original look.', scheme: 'dark', bar: '#0a0910', swatch: ['#0a0910', '#f27aae', '#9d8cf7'] },

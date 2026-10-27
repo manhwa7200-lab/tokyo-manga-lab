@@ -21,13 +21,13 @@
 .desktop-nav { display: none; }
 .mobile-nav {
   position: fixed; z-index: 30; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto;
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 6px; border-radius: 26px;
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; padding: 6px 4px; border-radius: 26px;
   background: color-mix(in srgb, var(--raised) 90%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--line); box-shadow: var(--shadow);
 }
 .mobile-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border-radius: 20px; color: var(--muted); transition: background .15s, color .15s; }
 .mobile-nav a .nav-icon { display: grid; place-items: center; font-size: 1.05rem; }
-.mobile-nav a small { font-size: .66rem; font-weight: 650; }
+.mobile-nav a small { font-size: .62rem; font-weight: 650; }
 .mobile-nav a.active { color: var(--accent); background: var(--accent-soft); }
 .mobile-nav a:active { transform: scale(.96); }
 

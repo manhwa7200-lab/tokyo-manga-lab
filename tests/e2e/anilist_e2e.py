@@ -55,7 +55,7 @@ with sync_playwright() as p:
     pg.evaluate("""() => new Promise((res,rej)=>{const r=indexedDB.open('tokyo-manga-lab',1);r.onupgradeneeded=e=>{const db=e.target.result;const s=db.createObjectStore('appSettings',{keyPath:'key'});s.createIndex('updatedAt','updatedAt');s.put({key:'coverSize',value:'compact',updatedAt:'x'});for(const n of ['contentItems','sourceEntries','libraryEntries','collections','collectionItems','readingProgress','chapterProgress','bookmarks','localFiles','sourceSettings','readingSessions','activityEvents','downloadJobs','syncOutbox','schemaMeta','apiCache','savedViews','chapterRecords','chapterAssets','downloadedAssets','statisticsCache']) db.createObjectStore(n,{keyPath: n==='schemaMeta'||n==='appSettings'?'key':n==='sourceSettings'?'sourceId':n==='apiCache'?'cacheKey':n==='statisticsCache'?'key':'id'});};r.onsuccess=()=>{r.result.close();res()};r.onerror=()=>rej(r.error)})""")
     pg.goto(U+'#settings/account'); pg.wait_for_timeout(1500)
     stores=pg.evaluate("""() => new Promise(res=>{const r=indexedDB.open('tokyo-manga-lab');r.onsuccess=()=>{res({v:r.result.version,s:[...r.result.objectStoreNames]});r.result.close()}})""")
-    ok(stores['v']==2 and 'accountLinks' in stores['s'] and 'syncLinks' in stores['s'],'DB upgraded to v2 with new stores')
+    ok(stores['v']==3 and 'readingHistory' in stores['s'] and 'accountLinks' in stores['s'] and 'syncLinks' in stores['s'],'DB upgraded to v3 with new stores')
     ok(pg.evaluate("document.documentElement.dataset.coverSize")=='compact','existing v1 setting survived the upgrade')
 
     # --- Paste-token connect, push opt-in prompt
@@ -68,6 +68,11 @@ with sync_playwright() as p:
     ok('Connected as Kai' in pg.inner_text('.row.is-info'),'settings shows connected account')
     ok(pg.is_checked('[data-setting="anilistPushEnabled"]'),'push toggle on after accepting')
 
+    # --- First sign-in imported the list by itself (no Sync now tap yet)
+    pg.goto(U+'#library'); pg.wait_for_timeout(900)
+    first=pg.inner_text('#appView')
+    ok('Linked Title' in first and 'Only On AniList' in first and 'Adult Title' not in first,'first sign-in already pulled the list automatically')
+
     # --- Save a MangaDex title locally (has anilistId 30013) and mark it, before syncing
     pg.goto(U+'#discover'); pg.wait_for_timeout(1000)
     pg.click('.card-save >> nth=0'); pg.wait_for_timeout(1500)
@@ -78,7 +83,7 @@ with sync_playwright() as p:
     pg.goto(U+'#settings/account'); pg.wait_for_timeout(600)
     pg.click('[data-action="anilist-sync"]'); pg.wait_for_timeout(4000)
     res=pg.inner_text('#anilistResult'); print('SYNC RESULT:',res)
-    ok('2 updated here' in res,'pulled the 2 safe titles')
+    ok('updated here' not in res,'manual sync after the automatic first one has nothing new to pull')
     ok('1 adult title skipped' in res,'adult title skipped while adult setting is off')
     pg.goto(U+'#library'); pg.wait_for_timeout(900)
     txt=pg.inner_text('#appView'); pg.screenshot(path=S+'/shots/anilist-library.png')

@@ -7,7 +7,7 @@ AniList is **optional**. The app works fully without it, and nothing waits for a
 
 In the Android app: **Profile → Connect AniList → Log in with AniList**. AniList opens in the browser, you approve, and you are returned to the app signed in. **Register** opens anilist.co/signup for people without an account, and **Not now** tucks the card away (it stays one tap away on Profile). Check that the address says anilist.co before you type your password. In a web browser one-tap return is not available, so use **Paste a token** in Settings → Account and sync.
 
-Afterwards the app asks whether to also save your status changes on AniList (say yes for two-way sync), then tap **Sync now**.
+The first time you sign in, the app imports your AniList list on its own (no need to tap **Sync now**); later syncs are manual or automatic as set in Settings. Afterwards the app asks whether to also save your status changes on AniList (say yes for two-way sync), then tap **Sync now**.
 
 ## The app ID
 Tokyo Manga Lab ships with its own AniList app ID (`44302`, set in `src/features/anilist/anilist-config.js`). It is a public number, not a secret. On anilist.co (Settings -> Developer) that app's **Redirect URL must be exactly `tokyomangalab://anilist-auth`**; if it is anything else, AniList will not return you to the app after you approve.

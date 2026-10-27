@@ -15,6 +15,12 @@ const ADULT_RATINGS = ["erotica", "pornographic"];
 // Sexualised-minor tags are never served in any mode. Checked by id (request filter) and by name (response filter, fail closed).
 const BLOCKED_TAG_IDS = ["2d1f5d56-a1e5-4d0d-a961-2193588b08ec", "ddefd648-5140-4e5f-ba18-4eca4071d19b"];
 const BLOCKED_TAG_NAMES = new Set(["loli", "shota"]);
+// Discover filters. Status values and sort keys are fixed lists, never passed through from the request as they are.
+const STATUS_VALUES = ["ongoing", "completed", "hiatus", "cancelled"];
+const SORT_KEYS = { popular: "followedCount", new: "createdAt", updated: "latestUploadedChapter" };
+const MAX_GENRE_FILTERS = 6;
+const LATEST_WINDOW = 100; // chapters looked at per Latest page; the titles they belong to are shown once each
+const TAG_LIST_TTL_MS = 6 * 60 * 60 * 1000;
 
 // ---- Tag policy ---------------------------------------------------------------------------------------------------
 // A title tagged loli or shota is shown only when ALL of these hold:
@@ -161,6 +167,7 @@ function normalizeManga(item) {
     language: attrs.originalLanguage || null,
     sourceUrl: item?.id ? `https://mangadex.org/title/${encodeURIComponent(item.id)}` : null,
     contentRating: attrs.contentRating || "unknown",
+    lastChapter: attrs.lastChapter ? String(attrs.lastChapter).slice(0, 12) : null,
     anilistId: numericLink(attrs.links?.al),
     malId: numericLink(attrs.links?.mal)
   };
@@ -271,7 +278,21 @@ function ratingParams(allowAdult) {
   return params;
 }
 
-function mangaSearchParams(query, page, allowAdult = false) {
+// Genre ids, status and sort from the request. Anything that is not a plain tag id, a listed status or a listed sort is
+// dropped, and the sexualised-minor tag ids can never be asked for, in any mode.
+function searchFilters(url) {
+  const genres = [...new Set(String(url.searchParams.get("genre") || "").split(",").map(id => id.trim().toLowerCase()).filter(validMangaId))]
+    .filter(id => !BLOCKED_TAG_IDS.includes(id)).slice(0, MAX_GENRE_FILTERS);
+  const status = String(url.searchParams.get("status") || "").toLowerCase();
+  const sort = String(url.searchParams.get("sort") || "").toLowerCase();
+  return { genres, status: STATUS_VALUES.includes(status) ? status : "", sort: Object.hasOwn(SORT_KEYS, sort) ? sort : "" };
+}
+
+function isFiltered(filters) {
+  return Boolean(filters && (filters.genres?.length || filters.status));
+}
+
+function mangaSearchParams(query, page, allowAdult = false, filters = {}) {
   const params = [
     ["limit", PAGE_SIZE],
     ["offset", (page - 1) * PAGE_SIZE],
@@ -280,14 +301,19 @@ function mangaSearchParams(query, page, allowAdult = false) {
     ["includes[]", "artist"],
     ...ratingParams(allowAdult)
   ];
-  if (query) params.push(["title", query], ["order[relevance]", "desc"]);
-  else params.push(["order[latestUploadedAt]", "desc"]);
+  for (const id of filters.genres || []) params.push(["includedTags[]", id]);
+  if (filters.genres?.length) params.push(["includedTagsMode", "AND"]);
+  if (filters.status) params.push(["status[]", filters.status]);
+  if (query) params.push(["title", query]);
+  if (filters.sort) params.push([`order[${SORT_KEYS[filters.sort]}]`, "desc"]);
+  else if (query) params.push(["order[relevance]", "desc"]);
+  else params.push(["order[latestUploadedChapter]", "desc"]);
   return params;
 }
 
-async function doMangaSearch(query, page, allowAdult = false) {
-  const payload = await fetchMangaDex("/manga", mangaSearchParams(query, page, allowAdult));
-  const extra = page === 1 ? await taggedSafeMatches(query, allowAdult) : [];
+async function doMangaSearch(query, page, allowAdult = false, filters = {}) {
+  const payload = await fetchMangaDex("/manga", mangaSearchParams(query, page, allowAdult, filters));
+  const extra = page === 1 && !isFiltered(filters) ? await taggedSafeMatches(query, allowAdult) : [];
   const items = withTagged(extra, (payload.data || []).filter(item => isAllowedContent(item, allowAdult)), query).map(normalizeManga);
   const total = Math.max(0, Number(payload.total) || items.length);
   return {
@@ -299,6 +325,78 @@ async function doMangaSearch(query, page, allowAdult = false) {
       hasNext: (page * PAGE_SIZE) < total
     }
   };
+}
+
+// ---- Genre list and Latest -------------------------------------------------------------------------------------------
+// The genre list comes from MangaDex's own tag list. Blocked tags are never listed, and the tags about sexual content are
+// listed only in the adult-gated case. Kept in memory for a few hours so it costs one upstream request per period.
+let tagListCache = { at: 0, tags: null };
+
+async function loadTagList() {
+  if (tagListCache.tags && Date.now() - tagListCache.at < TAG_LIST_TTL_MS) return tagListCache.tags;
+  const payload = await fetchMangaDex("/manga/tag", []);
+  const tags = (payload.data || []).filter(tag => tag?.id && validMangaId(tag.id)).map(tag => ({
+    id: String(tag.id).toLowerCase(),
+    name: pickText(tag.attributes?.name),
+    group: String(tag.attributes?.group || "other"),
+    allNames: Object.values(tag.attributes?.name || {}).map(name => String(name).toLowerCase())
+  })).filter(tag => tag.name);
+  tagListCache = { at: Date.now(), tags };
+  return tags;
+}
+
+function listableTags(tags, allowAdult) {
+  return tags
+    .filter(tag => !BLOCKED_TAG_IDS.includes(tag.id) && !tag.allNames.some(name => BLOCKED_TAG_NAMES.has(name.trim())))
+    .filter(tag => allowAdult || !tag.allNames.some(name => SEXUAL_TAG_WORDS.some(word => name.includes(word))))
+    .map(({ id, name, group }) => ({ id, name, group }))
+    .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+}
+
+async function handleV1Tags(url, origin) {
+  try {
+    const tags = listableTags(await loadTagList(), adultRequested(url, origin));
+    return json({ data: tags, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex" } }, 200, origin, { "Cache-Control": "public, max-age=3600" });
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : 502;
+    return apiError(status === 429 ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE", status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : "Could not load the genre list right now.", origin, status);
+  }
+}
+
+// The newest English chapters, one entry per title. MangaDex lists chapters, not titles, so the newest window of chapters is
+// read first and then the titles they belong to are loaded (with covers) and put through the same content policy as search.
+async function doLatest(page, allowAdult = false) {
+  const chapterParams = [["limit", LATEST_WINDOW], ["offset", (page - 1) * LATEST_WINDOW], ["order[publishAt]", "desc"],
+    ["translatedLanguage[]", "en"], ["includeExternalUrl", "0"], ["includeEmptyPages", "0"],
+    ...allowedRatings(allowAdult).map(rating => ["contentRating[]", rating])];
+  const payload = await fetchMangaDex("/chapter", chapterParams);
+  const newest = new Map();
+  for (const chapter of payload.data || []) {
+    const mangaId = getRelations(chapter).find(rel => rel.type === "manga")?.id;
+    if (!mangaId || !validMangaId(mangaId) || newest.has(mangaId)) continue;
+    const attrs = chapter.attributes || {};
+    newest.set(mangaId, { number: attrs.chapter ? String(attrs.chapter).slice(0, 12) : null, publishedAt: attrs.publishAt || attrs.readableAt || null });
+  }
+  const ids = [...newest.keys()];
+  const total = Math.max(0, Number(payload.total) || ids.length);
+  const pagination = { page, limit: LATEST_WINDOW, total, hasNext: page * LATEST_WINDOW < total && page < MAX_SEARCH_PAGE };
+  if (!ids.length) return { items: [], pagination };
+  const titles = await fetchMangaDex("/manga", [["limit", ids.length], ...ids.map(id => ["ids[]", id]),
+    ["includes[]", "cover_art"], ["includes[]", "author"], ["includes[]", "artist"], ...ratingParams(allowAdult)]);
+  const byId = new Map((titles.data || []).filter(item => isAllowedContent(item, allowAdult)).map(item => [item.id, item]));
+  const items = ids.filter(id => byId.has(id)).map(id => ({ ...normalizeManga(byId.get(id)), latestChapter: newest.get(id) }));
+  return { items, pagination };
+}
+
+async function handleV1Latest(url, origin) {
+  const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
+  try {
+    const result = await doLatest(page, adultRequested(url, origin));
+    return json({ data: result.items, pagination: result.pagination, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex", cachedSeconds: 120 } }, 200, origin);
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : 502;
+    return apiError(status === 429 ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE", status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : "Could not reach MangaDex. Try again shortly.", origin, status);
+  }
 }
 
 async function doMangaDetails(id, allowAdult = false) {
@@ -362,8 +460,9 @@ async function handleLegacyManga(url, origin) {
   const title = (url.searchParams.get("q") || "").trim().slice(0, MAX_QUERY_LENGTH);
   const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
   try {
-    const payload = await fetchMangaDex("/manga", mangaSearchParams(title, page, allowAdult));
-    const extra = page === 1 ? await taggedSafeMatches(title, allowAdult) : [];
+    const filters = searchFilters(url);
+    const payload = await fetchMangaDex("/manga", mangaSearchParams(title, page, allowAdult, filters));
+    const extra = page === 1 && !isFiltered(filters) ? await taggedSafeMatches(title, allowAdult) : [];
     const data = withTagged(extra, (payload.data || []).filter(item => isAllowedContent(item, allowAdult)), title).map(item => {
       const normalized = normalizeManga(item);
       return {
@@ -373,6 +472,7 @@ async function handleLegacyManga(url, origin) {
         year: normalized.releaseYear,
         status: item.attributes?.status || "unknown",
         contentRating: normalized.contentRating,
+        lastChapter: normalized.lastChapter,
         authors: [...normalized.authors, ...normalized.artists].filter(Boolean),
         tags: normalized.tags,
         coverUrl: normalized.coverUrl,
@@ -401,7 +501,7 @@ async function handleV1Search(url, origin) {
   const query = (url.searchParams.get("query") || "").trim().slice(0, MAX_QUERY_LENGTH);
   const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
   try {
-    const result = await doMangaSearch(query, page, adultRequested(url, origin));
+    const result = await doMangaSearch(query, page, adultRequested(url, origin), searchFilters(url));
     return json({
       data: result.items,
       pagination: result.pagination,
@@ -535,6 +635,8 @@ export default {
       }], meta: { apiVersion: "1", requestId: requestId() } }, 200, origin);
     }
     if (url.pathname === "/api/v1/search") return handleV1Search(url, origin);
+    if (url.pathname === "/api/v1/tags") return handleV1Tags(url, origin);
+    if (url.pathname === "/api/v1/latest") return handleV1Latest(url, origin);
 
     const pagesMatch = url.pathname.match(/^\/api\/v1\/chapters\/([^/]+)\/pages$/);
     if (pagesMatch) {

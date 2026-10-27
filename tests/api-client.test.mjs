@@ -61,3 +61,22 @@ test('connection status listeners hear about a failure and the recovery', async 
   await apiClient.health();
   assert.deepEqual(seen, ['offline', 'online']);
 });
+
+test('search sends genre, status and sort only when chosen; Latest and genre list use their own routes', async t => {
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async input => { urls.push(new URL(String(input))); return { ok: true, status: 200, json: async () => ({ data: [] }) }; };
+  t.after(() => { globalThis.fetch = original; });
+  await apiClient.mangaSearch({ query: 'x', page: 2 });
+  assert.equal(urls[0].searchParams.has('genre'), false);
+  assert.equal(urls[0].searchParams.has('status'), false);
+  await apiClient.mangaSearch({ query: '', genres: ['a', 'b'], status: 'completed', sort: 'new' });
+  assert.equal(urls[1].searchParams.get('genre'), 'a,b');
+  assert.equal(urls[1].searchParams.get('status'), 'completed');
+  assert.equal(urls[1].searchParams.get('sort'), 'new');
+  await apiClient.mangaLatest({ page: 3 });
+  assert.equal(urls[2].pathname, '/api/v1/latest');
+  assert.equal(urls[2].searchParams.get('page'), '3');
+  await apiClient.mangaTags();
+  assert.equal(urls[3].pathname, '/api/v1/tags');
+});

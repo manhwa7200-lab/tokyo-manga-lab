@@ -22,6 +22,8 @@ export function normalizeContentItem(input) {
     language: input.language || null,
     sourceUrl: input.sourceUrl || null,
     contentRating: input.contentRating || 'unknown',
+    lastChapter: input.lastChapter ? String(input.lastChapter).slice(0, 12) : null,
+    latestChapter: input.latestChapter?.number ? { number: String(input.latestChapter.number).slice(0, 12), publishedAt: input.latestChapter.publishedAt || null } : null,
     createdAt: input.createdAt || now,
     updatedAt: now
   };

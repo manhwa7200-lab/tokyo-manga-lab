@@ -1,0 +1,11 @@
+/* Recent (history) screen: grouped by day, newest first. */
+.recent-list { display: grid; }
+.recent-row { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line-soft); }
+.recent-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 12px 6px 12px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.recent-open .library-cover, .recent-open .library-cover-fallback { flex: 0 0 64px; width: 64px; height: 86px; border-radius: 8px; object-fit: cover; }
+.recent-copy { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.recent-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .98rem; }
+.recent-copy span { color: var(--text); font-size: .85rem; }
+.recent-copy small { color: var(--muted); font-size: .75rem; }
+.recent-open > svg { color: var(--faint); flex: 0 0 auto; }
+.recent-remove { background: transparent; }
