@@ -102,12 +102,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      
-     
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" dist/*.apk \
-            --title "Tokyo Manga Lab ${GITHUB_REF_NAME}" \
-            --notes "Debug-signed APK. Enable 'Install unknown apps' on Android to install." \
-            --prerelease
