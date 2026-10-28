@@ -1,7 +1,7 @@
 # Tokyo Manga Lab - build info
 
-Version: 1.0.0
-Milestone: First Stable Release
+Version: 1.1.0
+Milestone: New-chapter checks, notifications and auto-download
 
 See `CHANGELOG.md` for what changed in each version and `docs/` for the design notes.
 
@@ -11,6 +11,6 @@ See `CHANGELOG.md` for what changed in each version and `docs/` for the design n
 - `python3 tests/e2e/run.py` runs the browser tests (needs Python Playwright with Chromium).
 
 ## Not included
-- Discover genre/status/sort/Latest need the updated Worker deployed (`tokyo-manga-lab-api2`); they were tested against mocked responses only, not live MangaDex.
-- Downloads have not been run on a real phone or against live MangaDex, and the optional Kotlin plugin has not been compiled (`docs/ANDROID-NATIVE-DOWNLOADS.md`).
+- New-chapter checks need the updated Worker deployed (`tokyo-manga-lab-api2`, route `/api/v1/updates`; the app falls back to slower per-title lookups without it). Tested against mocked responses only, not live MangaDex.
+- Alerts with the app closed need the optional Android add-on (`docs/UPDATES.md`), which has never been compiled. Downloads have not been run on a real phone either, and their Kotlin plugin has not been compiled (`docs/ANDROID-NATIVE-DOWNLOADS.md`).
 - No Worker deployment, GitHub commit or push is done by building this package.

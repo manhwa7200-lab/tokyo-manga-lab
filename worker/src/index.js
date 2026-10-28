@@ -20,6 +20,7 @@ const STATUS_VALUES = ["ongoing", "completed", "hiatus", "cancelled"];
 const SORT_KEYS = { popular: "followedCount", new: "createdAt", updated: "latestUploadedChapter" };
 const MAX_GENRE_FILTERS = 6;
 const LATEST_WINDOW = 100; // chapters looked at per Latest page; the titles they belong to are shown once each
+const MAX_UPDATE_IDS = 50; // titles per update check; MangaDex allows 100 ids per request
 const TAG_LIST_TTL_MS = 6 * 60 * 60 * 1000;
 
 // ---- Tag policy ---------------------------------------------------------------------------------------------------
@@ -388,6 +389,30 @@ async function doLatest(page, allowAdult = false) {
   return { items, pagination };
 }
 
+// Update check: for up to 50 titles, the id of each one's newest chapter. One upstream request covers all of them, so the
+// app can tell which titles changed and only then ask for their chapter lists. Titles the content policy refuses are left out.
+async function doUpdates(ids, allowAdult = false) {
+  const payload = await fetchMangaDex("/manga", [["limit", ids.length], ...ids.map(id => ["ids[]", id]), ...ratingParams(allowAdult)]);
+  return (payload.data || []).filter(item => isAllowedContent(item, allowAdult)).map(item => ({
+    externalId: String(item.id),
+    latestChapterId: item.attributes?.latestUploadedChapter && validMangaId(String(item.attributes.latestUploadedChapter)) ? String(item.attributes.latestUploadedChapter) : null,
+    updatedAt: item.attributes?.updatedAt || null
+  }));
+}
+
+async function handleV1Updates(url, origin) {
+  const ids = [...new Set(String(url.searchParams.get("ids") || "").split(",").map(id => id.trim().toLowerCase()).filter(validMangaId))];
+  if (!ids.length) return apiError("INVALID_MANGA_ID", "Pass up to 50 MangaDex ids in ids=, separated by commas.", origin, 400);
+  if (ids.length > MAX_UPDATE_IDS) return apiError("TOO_MANY_IDS", `Ask for at most ${MAX_UPDATE_IDS} titles at a time.`, origin, 400);
+  try {
+    const data = await doUpdates(ids, adultRequested(url, origin));
+    return json({ data, meta: { apiVersion: "1", requestId: requestId(), source: "mangadex" } }, 200, origin, { "Cache-Control": "public, max-age=60" });
+  } catch (error) {
+    const status = error?.status === 429 ? 429 : 502;
+    return apiError(status === 429 ? "RATE_LIMITED" : "UPSTREAM_UNAVAILABLE", status === 429 ? "MangaDex is rate-limiting requests. Please retry shortly." : "Could not reach MangaDex. Try again shortly.", origin, status);
+  }
+}
+
 async function handleV1Latest(url, origin) {
   const page = parsePage(url.searchParams.get("page"), MAX_SEARCH_PAGE);
   try {
@@ -637,6 +662,7 @@ export default {
     if (url.pathname === "/api/v1/search") return handleV1Search(url, origin);
     if (url.pathname === "/api/v1/tags") return handleV1Tags(url, origin);
     if (url.pathname === "/api/v1/latest") return handleV1Latest(url, origin);
+    if (url.pathname === "/api/v1/updates") return handleV1Updates(url, origin);
 
     const pagesMatch = url.pathname.match(/^\/api\/v1\/chapters\/([^/]+)\/pages$/);
     if (pagesMatch) {

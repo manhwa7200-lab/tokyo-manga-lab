@@ -28,6 +28,9 @@ Added in 0.11.0. Open a title, tap **Download** above its chapters, pick what yo
 - One record per chapter in `downloadJobs` (title, chapter label, quality, page count, bytes, status). `downloadedAssets` and `chapterAssets` are not used.
 - Downloads are **never** part of a backup and never uploaded or shared. The app asks the phone to treat its storage as persistent (`navigator.storage.persist()`) so saved chapters are not evicted, but a phone can still clear app data.
 
+## Auto-download (1.1.0)
+Settings > Downloads > Auto-download (off by default): when a new-chapter check finds chapters, the newest 1, 3, 5 or 10 per title are queued, oldest first, through the same queue (Wi-Fi-only and the storage limit apply). See `docs/UPDATES.md`.
+
 ## Limits and honesty
 - Downloads are for your own reading on your own phone. There is no export, share or copy feature, and the app does not host anything.
 - Only MangaDex chapters hosted on MangaDex's network can be downloaded; chapters that link out to another site have no pages to save.

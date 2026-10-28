@@ -83,7 +83,7 @@ with sync_playwright() as p:
 
     # ---- reader works from the linked chapter list
     ok(pg.locator('[data-action="read-chapter"]').count()==1, 'Read button available on linked chapters')
-    pg.click('[data-action="read-chapter"]'); pg.wait_for_function("location.hash.startsWith('#read/')")
+    pg.click('[data-action="read-chapter"]'); pg.wait_for_function("() => location.hash.startsWith('#read/')")
     ok(pg.evaluate("location.hash")==f'#read/{C1}', 'reader route opened for the MangaDex chapter')
     pg.goto(U+'#library'); pg.wait_for_selector('.library-card')
 

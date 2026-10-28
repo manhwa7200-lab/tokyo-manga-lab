@@ -55,7 +55,7 @@ with sync_playwright() as p:
     pg.evaluate("""() => new Promise((res,rej)=>{const r=indexedDB.open('tokyo-manga-lab',1);r.onupgradeneeded=e=>{const db=e.target.result;const s=db.createObjectStore('appSettings',{keyPath:'key'});s.createIndex('updatedAt','updatedAt');s.put({key:'coverSize',value:'compact',updatedAt:'x'});for(const n of ['contentItems','sourceEntries','libraryEntries','collections','collectionItems','readingProgress','chapterProgress','bookmarks','localFiles','sourceSettings','readingSessions','activityEvents','downloadJobs','syncOutbox','schemaMeta','apiCache','savedViews','chapterRecords','chapterAssets','downloadedAssets','statisticsCache']) db.createObjectStore(n,{keyPath: n==='schemaMeta'||n==='appSettings'?'key':n==='sourceSettings'?'sourceId':n==='apiCache'?'cacheKey':n==='statisticsCache'?'key':'id'});};r.onsuccess=()=>{r.result.close();res()};r.onerror=()=>rej(r.error)})""")
     pg.goto(U+'#settings/account'); pg.wait_for_timeout(1500)
     stores=pg.evaluate("""() => new Promise(res=>{const r=indexedDB.open('tokyo-manga-lab');r.onsuccess=()=>{res({v:r.result.version,s:[...r.result.objectStoreNames]});r.result.close()}})""")
-    ok(stores['v']==3 and 'readingHistory' in stores['s'] and 'accountLinks' in stores['s'] and 'syncLinks' in stores['s'],'DB upgraded to v3 with new stores')
+    ok(stores['v']==4 and all(n in stores['s'] for n in ['readingHistory','accountLinks','syncLinks','updateWatch','chapterUpdates']),'DB upgraded to v4 with new stores')
     ok(pg.evaluate("document.documentElement.dataset.coverSize")=='compact','existing v1 setting survived the upgrade')
 
     # --- Paste-token connect, push opt-in prompt

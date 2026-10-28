@@ -174,3 +174,15 @@
 - **Default theme is now Sakura Flowers** (first install and after reset).
 - **AniList:** the first sign-in now imports your list automatically.
 - Tests: 208 unit tests; new browser suites `recent_e2e.py` and `discover_e2e.py`.
+
+## 1.0.0 - First stable version
+- Version number moved to 1.0.0 (no feature changes from 0.12.0), and a release workflow (`release-apk.yml`) that attaches the APK to a GitHub release.
+
+## 1.1.0 - New-chapter checks, notifications and auto-download
+- **New chapters:** the app checks the titles you are reading (or reading + planned) for new chapters. Finds appear in an **Updates** section on Home (open, mark read, dismiss) and as a toast while the app is open. Settings > **Notifications** is now real: turn checks on, choose which titles, how often (30 min to 6 hours), **Check now**, and clear the list. The first sight of a title only sets a starting point, so old chapters are never reported.
+- **Auto-download:** Settings > Downloads > Auto-download (off by default) queues the newest 1, 3, 5 or 10 new chapters per title through the normal queue (Wi-Fi-only and storage limit still apply). A switch also sits on the Downloads screen.
+- **Phone alerts with the app closed:** optional Android add-on (WorkManager + notification channel), **off by default and never compiled**. Create an empty `native/android/UPDATES_ENABLED` to try it; delete it if the build fails. See `docs/UPDATES.md`.
+- **Worker (needs a redeploy):** new `GET /api/v1/updates?ids=` (up to 50 titles per request, one MangaDex call). Older Workers still work, more slowly. Single-file copy: `tokyo-manga-lab-api2-worker.js`.
+- Local database upgraded to version 4 (new `updateWatch` and `chapterUpdates` stores; existing data is kept).
+- Fixes: browser tests no longer break on the page's security policy (`wait_for_function` calls now use the function form, which fixed the `reader_e2e` failure); `package-lock.json` version matched to the app; the planned "notifications" and "auto-download" entries are removed from Coming later.
+- Tests: new unit tests for the check rules, checker, controller and add-on files; new browser suite `updates_e2e.py`. Not verified on a real phone or live MangaDex.

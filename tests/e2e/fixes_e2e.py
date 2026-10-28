@@ -58,7 +58,7 @@ with sync_playwright() as p:
     pg.click('[data-action="details"]'); pg.wait_for_selector('#detailsDialog[open]'); pg.click('[data-action="close-details"]'); pg.wait_for_timeout(500)
     ok(not pg.evaluate("document.getElementById('detailsDialog').open") and pg.evaluate("history.length")>=n,'close button closes through history')
     pg.click('[data-action="details"]'); pg.wait_for_selector('#detailsDialog[open]'); pg.wait_for_selector('.chapter-row')
-    pg.click('[data-action="read-chapter"]'); pg.wait_for_function("location.hash.startsWith('#read/')"); pg.wait_for_timeout(400)
+    pg.click('[data-action="read-chapter"]'); pg.wait_for_function("() => location.hash.startsWith('#read/')"); pg.wait_for_timeout(400)
     pg.go_back(); pg.wait_for_timeout(700)
     ok(pg.evaluate("location.hash")=='#discover','Back from the reader returns to the page the sheet was opened from')
 

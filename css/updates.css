@@ -1,0 +1,14 @@
+/* New chapters (Home) and the auto-download row on Downloads. */
+.update-list { display: grid; }
+.update-row { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line-soft); }
+.update-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; padding: 10px 6px 10px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.update-open .library-cover, .update-open .library-cover-fallback { flex: 0 0 52px; width: 52px; height: 70px; border-radius: 8px; object-fit: cover; }
+.update-copy { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.update-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; }
+.update-copy span { font-size: .84rem; color: var(--text); }
+.update-copy small { color: var(--muted); font-size: .74rem; }
+.update-row:not(.is-unread) .update-copy strong { font-weight: 600; color: var(--muted); }
+.update-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.update-dismiss { background: transparent; }
+.update-more { margin: 8px 0 0; font-size: .78rem; color: var(--muted); }
+.dl-auto { margin: 0 0 14px; }

@@ -62,6 +62,22 @@ export const mangaDexAdapter = Object.freeze({
     const pageNumber = Math.max(1, Number(payload.pagination.page) || Number(page) || 1);
     return { items: payload.data.map(normalizeManga).filter(item => item.externalId), pagination: { page: pageNumber, limit: Math.max(1, Number(payload.pagination.limit) || 100), total: Math.max(0, Number(payload.pagination.total) || 0), hasNext: Boolean(payload.pagination.hasNext) }, source: 'mangadex' };
   },
+  // Newest chapter id of each title, in one request: Map(externalId -> chapterId | null). Returns null when the Worker is an
+  // older deployment without this route, so the caller can fall back to reading chapter lists.
+  async latestChapterIds(externalIds, { signal } = {}) {
+    try {
+      const payload = await apiClient.mangaUpdates(externalIds, { signal });
+      if (!Array.isArray(payload?.data)) throw new Error('MangaDex returned the update check in an unexpected format.');
+      return new Map(payload.data.filter(row => row && typeof row.externalId === 'string').map(row => [row.externalId, typeof row.latestChapterId === 'string' ? row.latestChapterId : null]));
+    } catch (error) {
+      if (error?.code === 'NOT_FOUND' || error?.status === 404) return null;
+      throw error;
+    }
+  },
+  // The newest chapters of one title (20), for the update check.
+  async recentChapters(externalId, { language = 'en', signal } = {}) {
+    return (await this.chapters(externalId, { page: 1, language, pageSize: 20, signal })).items;
+  },
   // The genre list used by the Discover filter: [{id, name, group}].
   async tags({ signal } = {}) {
     const payload = await apiClient.mangaTags({ signal });

@@ -26,6 +26,9 @@ Returns `{ data: [{ id, name, group }], meta }` for the Genre sheet, from MangaD
 ### `GET /api/v1/latest?page={page}`
 Newest English chapters, one entry per title: `{ data: ContentItem[] (each with latestChapter: { number, publishedAt }), pagination, meta }`. One page reads the newest 100 chapters (so a page can hold up to 100 titles); pages are clamped to 1–20. Titles go through the same content policy as search.
 
+### `GET /api/v1/updates?ids={uuid,uuid,…}`
+New in 1.1.0. Up to 50 MangaDex title ids (400 `INVALID_MANGA_ID` if none valid, `TOO_MANY_IDS` if more than 50). Returns `data: [{ externalId, latestChapterId, updatedAt }]` from one MangaDex call (`latestUploadedChapter`); titles hidden by the rating policy are left out, adult titles only in the same case as the other routes. Cached for 60 seconds. The app compares `latestChapterId` with its stored starting point and only then asks `/api/v1/manga/{id}/chapters` for what is new.
+
 ### `GET /api/v1/manga/{mangaDexUuid}`
 Returns `{ data: ContentItem, meta }`. Only MangaDex UUIDs and supported content ratings are accepted.
 
@@ -51,6 +54,7 @@ A catalogue entry is keyed in the app by an internal `contentItemId`, while prov
 
 - `UNSUPPORTED_CONTENT_TYPE` — not yet supported by the source registry.
 - `INVALID_MANGA_ID` — ID is not a valid MangaDex UUID.
+- `TOO_MANY_IDS` — more than 50 ids in `ids=`.
 - `INVALID_CHAPTER_ID` — chapter ID is not a valid UUID.
 - `CHAPTER_UNAVAILABLE` — chapter missing, or its title is filtered by the rating policy.
 - `CHAPTER_EXTERNAL` — chapter is hosted off MangaDex; open the source link.

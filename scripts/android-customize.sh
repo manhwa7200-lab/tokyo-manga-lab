@@ -135,3 +135,12 @@ if [ -f native/android/ENABLED ]; then
 else
   echo "Native downloads plugin: not enabled (optional)"
 fi
+
+# --- Optional: Kotlin new-chapter checker (alerts while the app is closed) ------------------------------------------
+# Off unless the file native/android/UPDATES_ENABLED exists. Runs after the downloads plugin. See docs/UPDATES.md.
+if [ -f native/android/UPDATES_ENABLED ]; then
+  echo "Native updates checker: enabled by native/android/UPDATES_ENABLED"
+  bash scripts/android-native-updates.sh
+else
+  echo "Native updates checker: not enabled (optional)"
+fi
