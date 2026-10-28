@@ -41,6 +41,7 @@ python3 tests/e2e/run.py   # browser tests (Python Playwright with Chromium)
 ## Current limits
 
 - Chapters are read from MangaDex through the in-app reader, or saved to your phone for offline reading (Downloads, `docs/DOWNLOADS.md`). Downloads are untested on a real phone and live MangaDex; they are gentle by design (one chapter at a time) and are never backed up or shared.
+- New-chapter checks, notifications and auto-download are in-app only unless the optional Android add-on is enabled (`docs/UPDATES.md`); they need the updated Worker and are untested on a real phone and live MangaDex.
 - Genre, Status, Sort by and Latest need the updated Worker deployed. They were tested against mocked responses, not live MangaDex.
 - MangaDex is the only manga source. AniList is for tracking and metadata only. Other sources must pass `docs/SOURCE-REVIEW.md` first.
 - No Tokyo Manga Lab accounts or cloud sync. Backups are files you save yourself.

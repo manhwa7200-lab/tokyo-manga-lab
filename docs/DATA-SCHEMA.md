@@ -92,3 +92,6 @@ Key/value preferences for appearance, reader, default library sorting, privacy, 
 4. Backup/restore must state whether it includes metadata only or actual binary content; this starter's JSON backup is metadata, not a file archive.
 5. Do not upload private user data without an explicit, explained opt-in.
 6. Cache/search data may expire; library, bookmarks and progress must not be discarded because a source was unavailable.
+
+### `updateWatch` and `chapterUpdates`
+Added in database version 4 (1.1.0). `updateWatch` (keyPath `id` = the content item id): the starting point for new-chapter checks, `externalId`, `latestChapterId`, `since`, `checkedAt`, `seenIds` (up to 40); the special row `__meta` keeps `lastRunAt`, `lastError`, `lastFound`, `watched`. `chapterUpdates` (keyPath `id` = chapter id, indexes `foundAt`, `contentItemId`): the Updates list, with the chapter fields needed to open or download it, a `read` flag and `foundAt`; trimmed to the newest 200. Not included in backups (they are rebuilt by the next check); clearing them never touches progress.

@@ -10,6 +10,7 @@ export const ICONS = Object.freeze({
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
   chevronRight: '<path d="m9 6 6 6-6 6"/>',
   chevronLeft: '<path d="m15 6-6 6 6 6"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
   chevronDown: '<path d="m6 9 6 6 6-6"/>',
   bookmark: '<path d="M7 4h10v16.5l-5-4-5 4z"/>',
   bookmarkFill: '<path class="fill" d="M7 4h10v16.5l-5-4-5 4z"/>',

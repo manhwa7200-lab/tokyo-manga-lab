@@ -10,12 +10,13 @@
 //   info     - read-only value (`value`, or `valueFrom` for a live value computed in app.js)
 //   planned  - not built yet; shown dimmed with a "Planned" badge
 //
-// Any item may carry `when`: 'anilistConnected' or 'anilistDisconnected' to show it only in that state.
+// Any item may carry `when` (see SETTING_CONDITIONS): 'anilistConnected', 'anilistDisconnected', 'nativeAlerts' or 'noNativeAlerts' to show it only in that state.
 //
 // To add a setting: add the key to DEFAULT_SETTINGS in settings-service.js, then add an item here.
 import { APP_NAME, APP_VERSION, MANGADEX_URL, REPO_URL } from '../../shared/app-info.js';
 import { API_BASE_URL } from '../../services/api-client.js';
 import { THEME_OPTIONS } from '../theme/themes.js';
+import { AUTO_LIMIT_OPTIONS, INTERVAL_OPTIONS, SCOPE_OPTIONS } from '../updates/update-plan.js';
 
 export const CHAPTER_LANGUAGES = Object.freeze([
   ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['it', 'Italian'],
@@ -90,6 +91,11 @@ export const SETTINGS_CATEGORIES = Object.freeze([
         { type: 'select', key: 'downloadStorageLimitMb', title: 'Storage limit', description: 'New downloads wait once this much is used.', options: [['512', '512 MB'], ['1024', '1 GB'], ['2048', '2 GB'], ['5120', '5 GB'], ['0', 'No limit']] },
         { type: 'info', title: 'Saved on this device', valueFrom: 'downloadUsage', description: 'Downloads stay on this phone. They are not part of a backup.' },
         { type: 'action', action: 'open-downloads', title: 'Manage downloads', description: 'See the queue and delete chapters.', button: 'Open' }
+      ] },
+      { id: 'auto', title: 'Auto-download', items: [
+        { type: 'toggle', key: 'autoDownloadEnabled', title: 'Auto-download new chapters', description: 'Saves new chapters of the titles you follow. Uses the Wi-Fi, storage and quality settings above.' },
+        { type: 'select', key: 'autoDownloadMax', title: 'Most per title', description: 'The newest chapters are saved first, so a long gap does not fill your phone.', options: AUTO_LIMIT_OPTIONS },
+        { type: 'info', title: 'Which titles', value: 'Set in Notifications', description: 'Auto-download follows the same list as new-chapter alerts.' }
       ] }
     ]
   },
@@ -188,10 +194,21 @@ export const SETTINGS_CATEGORIES = Object.freeze([
     ]
   },
   {
-    id: 'notifications', section: 'later', title: 'Notifications', icon: 'bell', summary: 'Chapter alerts and reminders', planned: true,
+    id: 'notifications', section: 'app', title: 'Notifications', icon: 'bell', summary: 'New chapter alerts',
     groups: [
-      { id: 'alerts', title: 'Alerts', items: [
-        { type: 'planned', id: 'new-chapters', title: 'New chapters', description: 'Tell me when a followed title updates.' },
+      { id: 'alerts', title: 'New chapters', items: [
+        { type: 'toggle', key: 'updatesEnabled', title: 'Check for new chapters', description: 'Looks for new chapters of the titles you follow when the app is open.' },
+        { type: 'select', key: 'updatesScope', title: 'Titles to follow', description: 'Only titles saved from MangaDex can be checked.', options: SCOPE_OPTIONS },
+        { type: 'select', key: 'updatesInterval', title: 'Check how often', description: 'Used while the app is open, and by phone alerts in the Android app.', options: INTERVAL_OPTIONS },
+        { type: 'info', title: 'Status', valueFrom: 'updateStatus' },
+        { type: 'action', action: 'check-updates', title: 'Check now', description: 'New chapters appear on Home.', button: 'Check', resultId: 'updatesResult' },
+        { type: 'action', action: 'updates-clear', title: 'Clear the list', description: 'Empties New chapters on Home. Reading progress is untouched.', button: 'Clear' }
+      ] },
+      { id: 'phone', title: 'Phone alerts', items: [
+        { type: 'toggle', key: 'updatesPhoneAlerts', title: 'Alert me on my phone', description: 'A notification when a new chapter arrives, even with the app closed.', badge: 'Android app', when: 'nativeAlerts' },
+        { type: 'info', title: 'Alert permission', valueFrom: 'alertsStatus', when: 'nativeAlerts' },
+        { type: 'action', action: 'enable-alerts', title: 'Allow notifications', description: 'Android asks once. You can change it later in system settings.', button: 'Allow', when: 'nativeAlerts' },
+        { type: 'info', title: 'Alerts with the app closed', value: 'Not in this build', description: 'This build checks only while the app is open. See docs/UPDATES.md for the optional Android add-on.', when: 'noNativeAlerts' },
         { type: 'planned', id: 'reminders', title: 'Reading reminders', description: 'A gentle nudge at a time you choose.' }
       ] }
     ]
@@ -202,8 +219,8 @@ export function findCategory(id) {
   return SETTINGS_CATEGORIES.find(category => category.id === id) || null;
 }
 
-export const SETTING_CONDITIONS = Object.freeze(['anilistConnected', 'anilistDisconnected']);
-export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync', 'ratings', 'downloadUsage']);
+export const SETTING_CONDITIONS = Object.freeze(['anilistConnected', 'anilistDisconnected', 'nativeAlerts', 'noNativeAlerts']);
+export const DYNAMIC_VALUES = Object.freeze(['anilistStatus', 'anilistLastSync', 'ratings', 'downloadUsage', 'updateStatus', 'alertsStatus']);
 export const CATEGORY_VALUES = Object.freeze(['theme', 'readerMode', 'language', 'anilistStatus']);
 
 export function allSettingKeys() {

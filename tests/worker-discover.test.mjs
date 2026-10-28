@@ -141,3 +141,31 @@ test('Latest reports an upstream failure as a friendly error', async t => {
   assert.equal(response.status, 502);
   assert.equal((await response.json()).error.code, 'UPSTREAM_UNAVAILABLE');
 });
+
+test('update check: one request for many titles returns each newest chapter id, and applies the content policy', async t => {
+  const worker = await loadWorker();
+  const seen = [];
+  const CH = '99999999-9999-4999-8999-999999999999';
+  mockFetch(t, url => {
+    seen.push(url);
+    return json({ data: [manga(A, 'safe', [], { latestUploadedChapter: CH, updatedAt: '2026-10-24T10:00:00+00:00' }), manga(B), manga(C, 'erotica')] });
+  });
+  const body = await (await worker.fetch(req(`/api/v1/updates?ids=${A},${B},${C},${A},not-an-id`))).json();
+  assert.equal(seen.length, 1);
+  assert.deepEqual(seen[0].searchParams.getAll('ids[]'), [A, B, C]);
+  assert.deepEqual(body.data.map(item => item.externalId), [A, B], 'the erotica title is dropped');
+  assert.equal(body.data[0].latestChapterId, CH);
+  assert.equal(body.data[1].latestChapterId, null);
+  assert.ok(!seen[0].searchParams.getAll('contentRating[]').includes('erotica'));
+});
+
+test('update check rejects an empty or oversized id list', async t => {
+  const worker = await loadWorker();
+  mockFetch(t, () => json({ data: [] }));
+  assert.equal((await worker.fetch(req('/api/v1/updates'))).status, 400);
+  assert.equal((await worker.fetch(req('/api/v1/updates?ids=nonsense'))).status, 400);
+  const many = Array.from({ length: 51 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`).join(',');
+  const response = await worker.fetch(req(`/api/v1/updates?ids=${many}`));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, 'TOO_MANY_IDS');
+});

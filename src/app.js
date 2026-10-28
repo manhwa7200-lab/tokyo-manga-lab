@@ -49,6 +49,10 @@ import { sendReport } from './features/reader/reader-report.js';
 import { attachKeepAlive } from './features/downloads/keep-alive.js';
 import { clearHistory, listHistory, recordHistory, removeHistory, trimHistory } from './data/repositories/history-repository.js';
 import { groupByDay, pageLabel, readToLabel, timeLabel } from './features/recent/recent-view.js';
+import { createUpdateController } from './features/updates/update-controller.js';
+import { updatesSectionMarkup } from './features/updates/update-view.js';
+import { addUpdates, clearUpdates, getMeta, listUpdates, listWatch, markUpdatesRead, putMeta, putWatch, removeUpdates, removeWatch } from './data/repositories/update-repository.js';
+import { API_BASE_URL } from './services/api-client.js';
 import { profileIsStale } from './features/anilist/anilist-profile.js';
 
 const root = document.getElementById('appView');
@@ -130,6 +134,33 @@ const downloads = createDownloadManager({
   getSettings: () => state.settings, getConnection: () => connectionInfo()
 });
 let dlc = null; // the download controller, created once the page is ready
+
+// New-chapter checks (see docs/UPDATES.md). `nativeUpdates` is the optional Android add-on and is null everywhere else.
+const nativeUpdates = window.Capacitor?.Plugins?.TmlUpdates || null;
+const updates = createUpdateController({
+  getLibrary: () => state.library, getSettings: () => state.settings, source: sourceRegistry.get('mangadex'), downloads, native: nativeUpdates,
+  store: { listWatch, putWatch, removeWatch, getMeta, putMeta, addUpdates, listUpdates, markUpdatesRead, removeUpdates, clearUpdates },
+  prepare: () => refreshLibraryIndex(), toast: text => toast(text), apiBase: () => API_BASE_URL, adult: () => adultActive(),
+  onChange: () => { refreshHomeUpdates().catch(() => {}); refreshUpdateStatus().catch(() => {}); }
+});
+
+async function refreshUpdateStatus() {
+  state.updateStatusText = await updates.statusLine();
+  const cell = document.querySelector('[data-dynamic="updateStatus"]');
+  if (cell) { cell.textContent = state.updateStatusText; cell.title = state.updateStatusText; }
+}
+
+async function updatesMarkup() {
+  const groups = (await updates.inbox()).filter(group => state.libraryById.has(group.contentItemId));
+  return updatesSectionMarkup(groups, { renderCover: item => coverMarkup(item, true), icon });
+}
+
+async function refreshHomeUpdates() {
+  const box = document.getElementById('homeUpdates');
+  if (!box) return;
+  box.innerHTML = await updatesMarkup();
+  hydrateIcons(box);
+}
 
 const downloadGroupKey = job => job.contentItemId || `title:${job.mangaTitle}`;
 
@@ -432,6 +463,7 @@ async function renderHome() {
   return `<section>
     <div class="page-head"><div><h1>Home</h1><p>Pick up where you left off.</p></div></div>
     <form class="search-bar" data-form="search"><label class="sr-only" for="homeSearch">Search manga titles</label><input class="field" id="homeSearch" name="query" type="search" autocomplete="off" maxlength="100" placeholder="Search manga" value="${escapeHtml(state.query)}"><button class="button-primary" type="submit">Search</button></form>
+    <div id="homeUpdates">${await updatesMarkup()}</div>
     <div class="section-head"><h2>Continue reading</h2><a class="more" href="#library">Library${icon('chevronRight', 'icon-sm')}</a></div>${continueBlock}
     <div id="homeFresh">${homeFreshMarkup()}</div>
     ${renderStats(stats)}
@@ -498,6 +530,7 @@ async function renderDownloads() {
   setTimeout(() => dlc?.refreshReadInfo(), 0);
   return `<section>
     <div class="dl-head"><span class="dl-head-spacer" aria-hidden="true"></span><h1>Downloads</h1><button class="icon-button" type="button" data-action="download-manage-toggle" aria-label="Manage downloads" title="Manage downloads">${icon('manage')}</button></div>
+    <div class="group dl-auto"><label class="row"><span class="row-copy"><strong>Auto-download new chapters</strong><small>${state.settings?.autoDownloadEnabled ? `On. Up to ${escapeHtml(state.settings.autoDownloadMax)} newest per title you follow.` : 'Off. Saves new chapters of the titles you are reading.'}</small></span><span class="row-trail"><span class="switch"><input type="checkbox" data-setting="autoDownloadEnabled" ${state.settings?.autoDownloadEnabled ? 'checked' : ''}><span class="switch-track"></span></span></span></label></div>
     <div id="downloadsBody" class="downloads-body">${dlc ? dlc.screenMarkup() : ''}</div>
     <p class="footer-note">Saved chapters stay on this phone for your own reading. They are not shared, backed up or uploaded anywhere. To download, open a title and tap Download above its chapters.</p>
     ${renderRoadmap('downloads')}
@@ -709,6 +742,8 @@ function queueAniListPush(contentItemId) {
 function dynamicValue(name) {
   if (name === 'anilistStatus') return state.anilist.status.label;
   if (name === 'downloadUsage') { const { usage } = downloads.snapshot(); return `${formatBytes(usage.bytes)} · ${usage.chapters} chapter${usage.chapters === 1 ? '' : 's'}`; }
+  if (name === 'updateStatus') return state.updateStatusText || 'Not checked yet';
+  if (name === 'alertsStatus') return ({ granted: 'Allowed', denied: 'Blocked in Android settings', prompt: 'Not asked yet' })[state.alertPermission] || 'Unknown';
   if (name === 'ratings') return adultActive() ? 'Includes adult (Android app only)' : 'Safe and suggestive';
   if (name === 'anilistLastSync') {
     const last = state.anilist.account?.lastSync;
@@ -720,6 +755,8 @@ function dynamicValue(name) {
 function itemVisible(item) {
   if (item.when === 'anilistConnected') return state.anilist.status.connected;
   if (item.when === 'anilistDisconnected') return !state.anilist.status.connected;
+  if (item.when === 'nativeAlerts') return Boolean(nativeUpdates);
+  if (item.when === 'noNativeAlerts') return !nativeUpdates;
   return true;
 }
 
@@ -747,7 +784,7 @@ function settingRow(item) {
     return `<div class="row">${copy}<span class="row-trail"><button class="button button-small ${item.danger ? 'button-danger' : ''}" type="button" data-action="${escapeHtml(item.action)}">${escapeHtml(item.button)}</button></span></div>${item.resultId ? `<p class="row-result" id="${escapeHtml(item.resultId)}" aria-live="polite"></p>` : ''}`;
   }
   const value = item.valueFrom ? dynamicValue(item.valueFrom) : item.value;
-  return `<div class="row is-info">${copy}<span class="row-trail"><span class="row-value" title="${escapeHtml(value)}">${escapeHtml(value)}</span></span></div>`;
+  return `<div class="row is-info">${copy}<span class="row-trail"><span class="row-value"${item.valueFrom ? ` data-dynamic="${escapeHtml(item.valueFrom)}"` : ''} title="${escapeHtml(value)}">${escapeHtml(value)}</span></span></div>`;
 }
 
 // The label of the option a select setting is currently on (used for the live values on Settings home).
@@ -846,6 +883,7 @@ function renderSettingsCategory(category) {
 async function renderSettings() {
   if (!state.settings) state.settings = await loadSettings();
   await refreshAniList();
+  await refreshUpdateStatus();
   const category = findCategory(getRouteParam());
   return category ? renderSettingsCategory(category) : renderSettingsHome();
 }
@@ -1664,7 +1702,33 @@ async function handleSettingChange(input) {
     loadSearch(state.query, 1);
     toast(value ? 'Adult titles enabled in this app.' : 'Adult titles hidden.');
   } else toast('Setting saved on this device.');
+  if (key === 'autoDownloadEnabled' && app.currentRoute() === 'downloads') await app.navigate('downloads');
+  if (key.startsWith('updates') || key.startsWith('autoDownload')) {
+    await updates.syncNative();
+    if (key === 'updatesEnabled' && value) updates.run({ force: true }).catch(() => {});
+    refreshUpdateStatus().catch(() => {});
+  }
   if (key.startsWith('download')) downloads.kick(); // a changed rule (Wi-Fi only, storage limit) may let a waiting queue continue
+}
+
+async function checkUpdatesNow() {
+  const result = document.getElementById('updatesResult');
+  if (result) result.textContent = 'Checking…';
+  if (!updates.watchedCount()) { if (result) result.textContent = 'You are not reading any MangaDex titles yet. Set one to Reading in your library.'; return; }
+  const outcome = await updates.run({ force: true });
+  const text = outcome.error ? outcome.error : outcome.found ? `${outcome.found} new chapter${outcome.found === 1 ? '' : 's'} found.` : 'Nothing new right now.';
+  if (result) result.textContent = text;
+  await refreshUpdateStatus();
+}
+
+async function enableAlerts() {
+  try {
+    const answer = await nativeUpdates.requestPermission();
+    state.alertPermission = answer?.state || 'unknown';
+    if (state.alertPermission === 'granted') await updates.syncNative();
+    toast(state.alertPermission === 'granted' ? 'Phone alerts are on.' : 'Notifications are blocked. Allow them in Android settings.');
+  } catch { toast('Could not ask for notification permission.'); }
+  if (app.currentRoute() === 'settings') await app.navigate('settings');
 }
 
 async function checkApi() {
@@ -1763,6 +1827,11 @@ async function handleAction(action, target) {
     case 'recent-clear': if (window.confirm('Clear Recent? Your library, reading progress and stats are kept.')) { await clearHistory(); await app.navigate('recent'); toast('Recent cleared.'); } break;
     case 'planned-feature': toast(`${target.dataset.title || 'This feature'} is planned and not available yet.`); break;
     case 'check-api': await checkApi(); break;
+    case 'check-updates': await checkUpdatesNow(); break;
+    case 'updates-clear': await updates.clearAll(); toast('New chapters cleared.'); break;
+    case 'update-open': await updates.markTitleRead(id); openDetails(id); break;
+    case 'update-dismiss': await updates.dismissTitle(id); break;
+    case 'enable-alerts': await enableAlerts(); break;
     case 'anilist-connect': await startAniListSignIn(); break;
     case 'anilist-register': openAniListPage(ANILIST_REGISTER_URL); break;
     case 'anilist-apps': openAniListPage(ANILIST_APPS_URL); break;
@@ -1899,6 +1968,7 @@ async function initialize() {
     if (migration.migrated) console.info(`Migrated ${migration.count} local library entries from the previous version.`);
     state.settings = await loadSettings();
     await downloads.init().catch(error => console.warn('Downloads could not be loaded:', error));
+    if (nativeUpdates?.permission) nativeUpdates.permission().then(answer => { state.alertPermission = answer?.state || 'unknown'; }).catch(() => {});
     attachKeepAlive(downloads, window.Capacitor?.Plugins?.TmlDownloads); // only does anything in an APK built with the optional Kotlin plugin
     configureAdult(state.settings.adultContentEnabled);
     applyTheme();
@@ -1921,6 +1991,7 @@ async function initialize() {
       scheduleReconnect();
       console.warn('Catalogue health check failed:', error.message);
     }
+    updates.start();
     if (state.anilist.status.connected) flushOutbox().catch(error => console.warn('AniList outbox not sent:', error.message));
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`).catch(error => console.warn('Offline app-shell registration skipped:', error));

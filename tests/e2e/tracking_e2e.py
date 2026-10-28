@@ -91,7 +91,7 @@ with sync_playwright() as p:
     pg.evaluate("""(t) => new Promise(res=>{const r=indexedDB.open('tokyo-manga-lab');r.onsuccess=()=>{const tx=r.result.transaction('accountLinks','readwrite');tx.objectStore('accountLinks').put({provider:'anilist',accessToken:t,expiresAt:Date.now()+1e10,viewer:{id:7,name:'Kai'},connectedAt:Date.now(),lastSync:null});tx.oncomplete=()=>{r.result.close();res()}}})""", TOKEN)
     pg.reload(); pg.wait_for_selector('.manga-card')
     pg.click('.manga-card [data-action="details"] >> nth=0'); pg.wait_for_selector('.chapter-row', timeout=8000)
-    pg.wait_for_function("document.querySelector('.chapter-count') && document.querySelector('.chapter-count').textContent.includes('150')", timeout=8000)
+    pg.wait_for_function("() => document.querySelector('.chapter-count') && document.querySelector('.chapter-count').textContent.includes('150')", timeout=8000)
 
     # ---- the whole list is loaded in big pages
     check(calls['chapters'][:2] == [(1, 100), (2, 100)], f"chapters load 100 at a time, page by page: {calls['chapters']}")
